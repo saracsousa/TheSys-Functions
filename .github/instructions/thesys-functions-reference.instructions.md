@@ -45,7 +45,21 @@ Every TheSys `.js` file follows this standard skeleton:
 │     - addFunctions(), removeFunctions()         │
 │     - getWrapperModuleId(), getWebPortalModuleId│
 │     - setupDataStoreHints(), logEvent()         │
+│     - logFine/Info/Warning/Severe()             │
+│     - getModuleName(), getRequestContext()      │
+│     - getLogger(), getJavaClass(), helpDocument()│
+│     - Java type declarations (Util, Level, etc.)│
+│     - Module state vars (thesys_moduleName etc.)│
+│     - initialize() — platform bootstrap         │
 └─────────────────────────────────────────────────┘
+
+> **CRITICAL:** When creating a new .js file, ALWAYS copy the COMPLETE
+> boilerplate from an existing working file (e.g. `EuGenIA_Audit_Control_INV.js`).
+> A simplified/stub boilerplate (e.g. `getWrapperModuleId()` returning `""`
+> or missing `initialize()`, `getModuleName()`, `logInfo()`) will cause
+> function registration to SILENTLY FAIL — the function will not appear
+> in the platform. The boilerplate must use `addcommandv1` (not the
+> older `addcommand`).
 ```
 
 ### 1.3 Function Signature

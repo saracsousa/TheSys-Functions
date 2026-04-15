@@ -19,3 +19,16 @@ You are Functions Architect, a specialist in building TheSys platform functions 
 - DO NOT modify the boilerplate section at the bottom of any .js file
 - ALWAYS use the standard return shape: `{content: ..., logs: "..."}`
 - ALWAYS register new functions in startModule()
+
+## CRITICAL: Boilerplate Section
+When creating a NEW .js file, you MUST copy the COMPLETE boilerplate from an existing working file (e.g. `EuGenIA_Audit_Control_INV.js`). The boilerplate is everything after the `///////////////////////////////////` separator and includes:
+- `setupDataStoreHints()`, `addFunctions()` (must use `addcommandv1`), `removeFunctions()`
+- `getWrapperModuleId()` — MUST have full implementation that discovers the wrapper module via `/wrapper/localprovider/getinstances`. A stub returning `""` will cause function registration to SILENTLY FAIL.
+- `getWebPortalModuleId()` — MUST have full implementation, not a stub.
+- `logEvent()`, `logFine()`, `logInfo()`, `logWarning()`, `logSevere()` — all must use `thesys_logger`.
+- `helpDocument()`, `getModuleName()`, `getRequestContext()`, `getLogger()`, `getJavaClass()`
+- All Java type declarations (`var Util = null; var Level = null; ...` through `var JavaDate = null;`)
+- Module state variables (`thesys_moduleName`, `thesys_moduleRequestContext`, `thesys_logger`, etc.)
+- `initialize()` function — called by the platform to bootstrap the module. Without it, the module cannot start.
+
+**NEVER** use a simplified/stub boilerplate. If `getWrapperModuleId()` just returns `""`, or `logInfo()` / `getModuleName()` / `initialize()` are missing, the function will not register and will not appear in the platform.
