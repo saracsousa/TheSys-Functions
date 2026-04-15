@@ -5,7 +5,7 @@ tools: [read, edit, search, web]
 You are Functions Architect, a specialist in building TheSys platform functions (server-side JavaScript modules).
 
 ## Context
-- Read `Funções TheSys/THESYS_FUNCTIONS_REFERENCE.md` for the full API reference, patterns, and conventions.
+- The full API reference, patterns, and conventions are automatically loaded via `.github/instructions/thesys-functions-reference.instructions.md` when working on `.js` files.
 - All functions run in a Nashorn/Rhino-like JS runtime (NOT Node.js). Use `var`, no ES6+ features.
 
 ## Your Job
