@@ -39,6 +39,77 @@ After copying the template, you MUST replace ALL of the following before saving:
 - ALWAYS register new functions in startModule()
 - **NEVER use angle brackets `<>` in string values** (e.g. `"<your_app>"`, `"<AUTHOR>"`). The TheSys platform pre-processes JS files and angle brackets in strings cause silent module loading failures. Use plain text placeholders like `TODO_REPLACE` instead.
 
+## MANDATORY: Step-by-Step Debugging & Logging
+
+Every business function **MUST** include `ticket.addOutput()` AND `logInfo()`/`logWarning()`/`logSevere()` calls at **every significant step**. Without these, errors are invisible in the TheSys console and impossible to diagnose.
+
+### Required Pattern
+
+1. **Use a `STEP` variable** to track the current execution step:
+```javascript
+var STEP = "INIT";
+```
+
+2. **At the start of every function**, log entry:
+```javascript
+ticket.addOutput("[myFunction] START");
+logInfo("myFunction", "Function called");
+```
+
+3. **Before each logical step**, update STEP and log:
+```javascript
+STEP = "PARSE_INPUT";
+ticket.addOutput("[myFunction] STEP: " + STEP);
+```
+
+4. **After parsing input**, log the parsed value:
+```javascript
+ticket.addOutput("[myFunction] parsedInput=" + JSON.stringify(parsedInput));
+logInfo("myFunction", "parsedInput=" + JSON.stringify(parsedInput));
+```
+
+5. **Before each BigQuery/API call**, log the step:
+```javascript
+STEP = "QUERY_SOMETHING";
+ticket.addOutput("[myFunction] STEP: " + STEP);
+logInfo("myFunction", "Executing BigQuery: something");
+```
+
+6. **After each query succeeds**, log row count:
+```javascript
+ticket.addOutput("[myFunction] something rows=" + (data.Result ? data.Result.length : 0));
+```
+
+7. **On every error exit**, log with STEP context + the error:
+```javascript
+ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
+logWarning("myFunction", result.logs);
+```
+
+8. **On success**, log the summary:
+```javascript
+ticket.addOutput("[myFunction] SUCCESS: " + result.logs);
+logInfo("myFunction", result.logs);
+```
+
+9. **In the catch block**, include STEP for context and use `logSevere()`:
+```javascript
+} catch (err) {
+  result.logs = "EXCEPTION at STEP=" + STEP + ": " + err;
+  ticket.addOutput("[myFunction] " + result.logs);
+  logSevere("myFunction", result.logs);
+  ...
+}
+```
+
+### Why This Matters
+- `ticket.addOutput()` = visible in TheSys console (the user sees this)
+- `logInfo()` / `logWarning()` / `logSevere()` = platform logs (for audit/search)
+- Without both, errors show as generic failures with no diagnostic info
+- The `STEP` variable pinpoints exactly where execution failed, even in the catch block
+
+**NEVER ship a function that only has `result.logs = "ERROR: ..."` without a matching `ticket.addOutput()` call. The user will see nothing.**
+
 ## CRITICAL: Boilerplate Section
 When creating a NEW .js file, you MUST copy the COMPLETE boilerplate from an existing working file (e.g. `EuGenIA_Audit_Control_INV.js`). The boilerplate is everything after the `///////////////////////////////////` separator and includes:
 - `setupDataStoreHints()`, `addFunctions()` (must use `addcommandv1`), `removeFunctions()`
@@ -51,3 +122,14 @@ When creating a NEW .js file, you MUST copy the COMPLETE boilerplate from an exi
 - `initialize()` function — called by the platform to bootstrap the module. Without it, the module cannot start.
 
 **NEVER** use a simplified/stub boilerplate. If `getWrapperModuleId()` just returns `""`, or `logInfo()` / `getModuleName()` / `initialize()` are missing, the function will not register and will not appear in the platform.
+
+## Common Pitfalls to Avoid
+
+| Pitfall | Correct Practice |
+|---------|------------------|
+| BigQuery subquery without alias: `FROM (SELECT ...) WHERE` | Always add `AS t`: `FROM (SELECT ...) AS t WHERE` |
+| Nested helper functions inside business function | Define helpers as top-level functions before the business function |
+| Only setting `result.logs` on error without `ticket.addOutput()` | Always pair every error `result.logs` with a `ticket.addOutput()` call |
+| Generic catch block: `"EXCEPTION: " + err` | Include STEP context: `"EXCEPTION at STEP=" + STEP + ": " + err` |
+| No SQL logging on query failure | Log the SQL query on failure: `logWarning("fn", msg + " | SQL=" + sql)` |
+| Missing `logSevere()` in catch blocks | Always use `logSevere()` (not `logWarning()`) in catch blocks |

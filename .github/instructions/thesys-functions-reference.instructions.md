@@ -289,6 +289,17 @@ These functions build SQL queries and execute them against Google BigQuery via `
 - **What it does:** Retrieves the most recent investigation row from BigQuery by trin_id, using `QUALIFY ROW_NUMBER()` to get the latest by `updated_date`.
 - **BigQuery table:** `networkanalytics-p-292818.trin.investigation`
 
+#### `contagemSAsPorLocalidade` — SA Counts by Location (Distrito/Concelho/Freguesia)
+- **File:** `contagemSAsPorLocalidade.js`
+- **Path:** `/ai/cadastro/contagemSAsPorLocalidade`
+- **Parameters:** `THESYS.ALLPARAMETERS.JSON*string`
+- **Input:** Optional JSON `{"distrito": "...", "concelho": "...", "freguesia": "..."}`
+- **What it does:** Counts distinct service accounts grouped by distrito, concelho, and freguesia. Unions data from both HFC and FTTH cadastro tables. Supports optional filters.
+- **BigQuery tables:**
+  - `ops-dpt-lab-204386.topology.hfc_tabela_centralizada_cadastro`
+  - `ops-dpt-lab-204386.topology.ftth_tabela_centralizada_cadastro`
+- **Returns:** `{ por_distrito: [{distrito, count_sa}], por_concelho: [{distrito, concelho, count_sa}], por_freguesia: [{distrito, concelho, freguesia, count_sa}] }`
+
 ---
 
 ### 2.2 TRIN / MAC (Activities API) — Functions That Query the Activities Platform
@@ -428,6 +439,8 @@ var sql_query = 'SELECT ... FROM `project.dataset.table` WHERE ...';
 var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
 if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
   result.logs = "ERROR: Query failed";
+  ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
+  logWarning("myFunction", result.logs + " | SQL=" + sql_query);
   ticket.getResult().setObject(JSON.stringify(result));
   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
   return;
@@ -435,11 +448,25 @@ if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
 var data_runTicketGCP = JSON.parse(runTicketGCP.getResult().getObject());
 if (data_runTicketGCP.Result === undefined) {
   result.logs = "ERROR: " + data_runTicketGCP.Error;
+  ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
+  logWarning("myFunction", result.logs);
   // handle error...
   return;
 }
 result.content = data_runTicketGCP.Result;
+ticket.addOutput("[myFunction] rows=" + (result.content ? result.content.length : 0));
 ```
+
+**IMPORTANT — BigQuery Subquery Alias Rule:**
+BigQuery requires every subquery used as a table source to have an alias. Without it, the query fails silently.
+```sql
+-- WRONG (will fail):
+SELECT * FROM (SELECT a, b FROM t1 UNION ALL SELECT a, b FROM t2) WHERE a IS NOT NULL
+
+-- CORRECT:
+SELECT * FROM (SELECT a, b FROM t1 UNION ALL SELECT a, b FROM t2) AS t WHERE a IS NOT NULL
+```
+Always add `AS t` (or a meaningful alias) after closing the subquery parenthesis.
 
 ### 3.3 Standard MAC/TRIN Activities Query Template
 
@@ -476,7 +503,78 @@ resultJson = resultJson.replace(/"(\d+),(\d+)"/g, '"$1.$2"');
 | Scheduler/internal function path | `/dpt/<functionName>` |
 | Skills/demo function path | `/skills/<functionName>`, `/demo/<functionName>` |
 | BigQuery project IDs | `ops-dpt-lab-204386`, `ops-reporting-p-448320`, `networkanalytics-p-292818` |
+### 3.7 Mandatory Step-by-Step Debugging Pattern
 
+Every function MUST include `ticket.addOutput()` and `logInfo()`/`logWarning()`/`logSevere()` at every step. Use a `STEP` variable to track execution progress:
+
+```javascript
+function myFunction(ticket, params) {
+  var result = { content: "", logs: "" };
+  var STEP = "INIT";
+
+  ticket.addOutput("[myFunction] START");
+  logInfo("myFunction", "Function called");
+
+  // --- 1. Parse input ---
+  STEP = "PARSE_INPUT";
+  ticket.addOutput("[myFunction] STEP: " + STEP);
+  // ... parse ...
+  ticket.addOutput("[myFunction] parsedInput=" + JSON.stringify(parsedInput));
+
+  // --- 2. Query ---
+  STEP = "QUERY_DATA";
+  ticket.addOutput("[myFunction] STEP: " + STEP);
+  logInfo("myFunction", "Executing query");
+  // ... execute ...
+  // On error:
+  ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
+  logWarning("myFunction", result.logs + " | SQL=" + sql_query);
+  // On success:
+  ticket.addOutput("[myFunction] rows=" + count);
+
+  // --- Catch block ---
+  } catch (err) {
+    result.logs = "EXCEPTION at STEP=" + STEP + ": " + err;
+    ticket.addOutput("[myFunction] " + result.logs);
+    logSevere("myFunction", result.logs);
+  }
+}
+```
+
+Key rules:
+- `ticket.addOutput()` = visible in TheSys console (user-facing)
+- `logInfo()/logWarning()/logSevere()` = platform logs (audit/search)
+- Every error exit MUST have both `ticket.addOutput()` and a `log*()` call
+- The `STEP` variable allows catch blocks to report WHERE the exception occurred
+- On query failure, always log the SQL query for reproduction
+
+### 3.8 Helper Functions Placement
+
+Define helper/utility functions (e.g. `safeSql()`) as **top-level functions** before the business function, NOT as nested functions inside it. Nested function definitions create a new function object on every call and are harder to reuse.
+
+```javascript
+// CORRECT — top-level helper
+function safeSql(v) {
+  if (v === null || v === undefined) return "";
+  return ("" + v).replace(/'/g, "''");
+}
+
+function myBusinessFunction(ticket, params) {
+  // ... use safeSql() here ...
+}
+```
+
+### 3.9 BigQuery Subquery Alias
+
+BigQuery requires subqueries used as table sources to have an alias. This is a **mandatory** rule.
+
+```sql
+-- WRONG:
+SELECT * FROM (SELECT ... UNION ALL SELECT ...) WHERE ...
+
+-- CORRECT:
+SELECT * FROM (SELECT ... UNION ALL SELECT ...) AS t WHERE ...
+```
 ---
 
 ## 4. Quick Reference: All Registered Functions
@@ -498,5 +596,6 @@ resultJson = resultJson.replace(/"(\d+),(\d+)"/g, '"$1.$2"');
 | `guidesConsult` | (scheduler) | guidesConsult.js | Elastic → GCP | ETL/Ingest |
 | `kristinStatusIngest` | `/dpt/kristinStatusIngest` | kristin_status_ingest.js | Elastic → GCP | ETL/Ingest |
 | `setAllInactive` | `/dpt/sara/setAllInactive` | EuGenIA_Logo_Manager.js | EuGenIA API | Management |
+| `contagemSAsPorLocalidade` | `/ai/cadastro/contagemSAsPorLocalidade` | contagemSAsPorLocalidade.js | BigQuery | AI Query |
 | `setActiveRegularEugenias` | `/dpt/sara/setActiveRegularEugenias` | EuGenIA_Logo_Manager.js | EuGenIA API | Management |
 | `getPortugueseDishes` | `/skills/getPortugueseDishes` | função_skills.js | Static | Demo/Test |

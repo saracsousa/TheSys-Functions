@@ -26,8 +26,14 @@ var defaultLogLevel = "WARNING";
  */
 function myFunction(ticket, params) {
   var result = { content: "", logs: "" };
+  var STEP = "INIT";
+
+  ticket.addOutput("[myFunction] START");
+  logInfo("myFunction", "Function called");
 
   // --- 1. Parse input ---
+  STEP = "PARSE_INPUT";
+  ticket.addOutput("[myFunction] STEP: " + STEP);
   var rawInput = "";
   try {
     if (params.length > 0 && params.get(0) !== null && params.get(0) !== undefined) {
@@ -61,33 +67,57 @@ function myFunction(ticket, params) {
     }
   }
 
-  ticket.addOutput("myFunction: filterValue=" + filterValue);
+  ticket.addOutput("[myFunction] filterValue=" + filterValue);
+  logInfo("myFunction", "filterValue=" + filterValue);
 
   // --- 2. Your logic here (BigQuery / TRIN / Elastic / etc.) ---
-  // Example: BigQuery query
-  // var sql_query = 'SELECT * FROM `project.dataset.table` WHERE column = "' + filterValue + '" LIMIT 100';
-  // var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
-  // if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
-  //   result.logs = "ERROR: BigQuery query failed";
-  //   ticket.getResult().setObject(JSON.stringify(result));
-  //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-  //   return;
-  // }
-  // var data = JSON.parse(runTicketGCP.getResult().getObject());
-  // if (data.Result === undefined) {
-  //   result.logs = "ERROR: " + data.Error;
-  //   ticket.getResult().setObject(JSON.stringify(result));
-  //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-  //   return;
-  // }
-  // result.content = data.Result;
+  // IMPORTANT: When using subqueries in BigQuery, always add an alias: FROM (...) AS t
+  try {
+    STEP = "QUERY_DATA";
+    ticket.addOutput("[myFunction] STEP: " + STEP);
+    logInfo("myFunction", "Executing BigQuery query");
 
-  // --- 3. Return result ---
-  result.content = "Hello from myFunction!";
-  result.logs = "Executed successfully with filterValue=" + filterValue;
+    // Example: BigQuery query
+    // var sql_query = 'SELECT * FROM `project.dataset.table` WHERE column = "' + filterValue + '" LIMIT 100';
+    // var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
+    // if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
+    //   result.logs = "ERROR: BigQuery query failed";
+    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
+    //   logWarning("myFunction", result.logs + " | SQL=" + sql_query);
+    //   ticket.getResult().setObject(JSON.stringify(result));
+    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    //   return;
+    // }
+    // var data = JSON.parse(runTicketGCP.getResult().getObject());
+    // if (data.Result === undefined) {
+    //   result.logs = "ERROR: " + (data.Error || "unknown");
+    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
+    //   logWarning("myFunction", result.logs);
+    //   ticket.getResult().setObject(JSON.stringify(result));
+    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    //   return;
+    // }
+    // ticket.addOutput("[myFunction] rows=" + (data.Result ? data.Result.length : 0));
+    // result.content = data.Result;
 
-  ticket.getResult().setObject(JSON.stringify(result));
-  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+    // --- 3. Return result ---
+    STEP = "COMPOSE_RESPONSE";
+    ticket.addOutput("[myFunction] STEP: " + STEP);
+    result.content = "Hello from myFunction!";
+    result.logs = "Executed successfully with filterValue=" + filterValue;
+
+    ticket.addOutput("[myFunction] SUCCESS: " + result.logs);
+    logInfo("myFunction", result.logs);
+    ticket.getResult().setObject(JSON.stringify(result));
+    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+
+  } catch (err) {
+    result.logs = "EXCEPTION at STEP=" + STEP + ": " + err;
+    ticket.addOutput("[myFunction] " + result.logs);
+    logSevere("myFunction", result.logs);
+    ticket.getResult().setObject(JSON.stringify(result));
+    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+  }
 }
 
 
