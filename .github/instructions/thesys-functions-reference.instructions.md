@@ -301,6 +301,18 @@ These functions build SQL queries and execute them against Google BigQuery via `
 - **Partition filter:** `day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` — applied inside each SELECT of the UNION
 - **Returns:** `{ por_distrito: [{distrito, count_sa}], por_concelho: [{distrito, concelho, count_sa}], por_freguesia: [{distrito, concelho, freguesia, count_sa}] }`
 
+#### `listarContagensSAs` — Distinct SA Counts by Distrito/Concelho/Freguesia
+- **File:** `ListarContagensSAs.js`
+- **Path:** `/ai/teste/listarContagensSAs`
+- **Parameters:** `THESYS.ALLPARAMETERS.JSON*string`
+- **Input:** None required (no filters)
+- **What it does:** Counts distinct service accounts grouped by `distrito_cliente`, `concelho_cliente`, and `freguesia_cliente`. Unions data from both HFC and FTTH cadastro tables.
+- **BigQuery tables:**
+  - `ops-dpt-lab-204386.topology.hfc_tabela_centralizada_cadastro` (partitioned by `day_part`)
+  - `ops-dpt-lab-204386.topology.ftth_tabela_centralizada_cadastro` (partitioned by `day_part`)
+- **Partition filter:** `day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` — applied inside each SELECT of the UNION
+- **Returns:** `[{distrito_cliente, concelho_cliente, freguesia_cliente, distinct_sa_count}]`
+
 ---
 
 ### 2.2 TRIN / MAC (Activities API) — Functions That Query the Activities Platform
@@ -656,4 +668,5 @@ If the user explicitly provides an objectSpace, use that instead.
 | `setAllInactive` | `/dpt/sara/setAllInactive` | EuGenIA_Logo_Manager.js | EuGenIA API | Management |
 | `contagemSAsPorLocalidade` | `/ai/cadastro/contagemSAsPorLocalidade` | contagemSAsPorLocalidade.js | BigQuery | AI Query |
 | `setActiveRegularEugenias` | `/dpt/sara/setActiveRegularEugenias` | EuGenIA_Logo_Manager.js | EuGenIA API | Management |
+| `listarContagensSAs` | `/ai/teste/listarContagensSAs` | ListarContagensSAs.js | BigQuery | AI Query |
 | `getPortugueseDishes` | `/skills/getPortugueseDishes` | função_skills.js | Static | Demo/Test |

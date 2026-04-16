@@ -123,13 +123,37 @@ When creating a NEW .js file, you MUST copy the COMPLETE boilerplate from an exi
 
 **NEVER** use a simplified/stub boilerplate. If `getWrapperModuleId()` just returns `""`, or `logInfo()` / `getModuleName()` / `initialize()` are missing, the function will not register and will not appear in the platform.
 
+## MANDATORY: BigQuery Partition Filter (`day_part`)
+
+Many BigQuery tables (especially in `topology`, `problem_management`, `trin`) are **partitioned by `day_part`**. Queries without a partition filter will **fail silently or be rejected by BigQuery**.
+
+### Rules
+1. **Before generating any BigQuery SQL**, check whether the target table requires a `day_part` filter. Tables in `topology.*` (e.g. `hfc_tabela_centralizada_cadastro`, `ftth_tabela_centralizada_cadastro`) **always** require it.
+2. **When using UNION ALL**, the `day_part` filter MUST go **inside each SELECT**, NOT on the outer query:
+```sql
+-- CORRECT:
+SELECT col FROM table_a WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+UNION ALL
+SELECT col FROM table_b WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+
+-- WRONG (filter does NOT push down):
+SELECT col FROM (
+  SELECT col FROM table_a UNION ALL SELECT col FROM table_b
+) AS t WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+```
+3. **Default safe filter**: `WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)`
+4. If unsure whether a table is partitioned, **always add the filter** — it is harmless on non-partitioned tables.
+
 ## Common Pitfalls to Avoid
 
 | Pitfall | Correct Practice |
 |---------|------------------|
 | BigQuery subquery without alias: `FROM (SELECT ...) WHERE` | Always add `AS t`: `FROM (SELECT ...) AS t WHERE` |
+| **Missing `day_part` partition filter on `topology.*` tables** | **Always add `WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` inside each SELECT** |
+| UNION ALL with partition filter on outer query only | Partition filter must go inside each SELECT of the UNION ALL |
 | Nested helper functions inside business function | Define helpers as top-level functions before the business function |
 | Only setting `result.logs` on error without `ticket.addOutput()` | Always pair every error `result.logs` with a `ticket.addOutput()` call |
 | Generic catch block: `"EXCEPTION: " + err` | Include STEP context: `"EXCEPTION at STEP=" + STEP + ": " + err` |
 | No SQL logging on query failure | Log the SQL query on failure: `logWarning("fn", msg + " | SQL=" + sql)` |
 | Missing `logSevere()` in catch blocks | Always use `logSevere()` (not `logWarning()`) in catch blocks |
+| `objectSpace` does not match function path | Infer `objectSpace` from the path prefix: `/ai/teste/...` → `"teste"` |
