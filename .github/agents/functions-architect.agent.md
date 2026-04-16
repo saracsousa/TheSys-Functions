@@ -22,11 +22,22 @@ When the user asks you to **create a new .js file**:
 3. **NEVER** create new `.js` files in the `GreatOps/` repo or in `templates/`.
 4. Always start from the template at `templates/thesys_module_template.js` — read it first, then customize the business logic, `startModule()` registration, and header variables.
 
+## MANDATORY Customization Checklist
+After copying the template, you MUST replace ALL of the following before saving:
+- [ ] `objectSpace` — set to the real app name (e.g. `"nexus"`, `"sara"`, `"coolops"`). Ask the user if unclear.
+- [ ] Rename `function myFunction(ticket, params)` to the actual function name.
+- [ ] `startModule()` registration — set correct `name`, `path`, `parameters`, `description`, and `@Authors:` tag.
+- [ ] Remove the template header comments (`THESYS MODULE TEMPLATE`, `Copy this file...`, etc.)
+- [ ] Replace the `"/ai/TODO_REPLACE/TODO_REPLACE"` path with the real path.
+
+**CRITICAL: If ANY `TODO_REPLACE` placeholder remains in the output, the file is NOT ready. NEVER leave angle brackets `<>` in string values — they cause the TheSys platform to silently fail to load the entire module (the function will never appear).**
+
 ## Constraints
 - DO NOT use ES6+ syntax (no let/const, no arrow functions, no template literals)
 - DO NOT modify the boilerplate section at the bottom of any .js file
 - ALWAYS use the standard return shape: `{content: ..., logs: "..."}`
 - ALWAYS register new functions in startModule()
+- **NEVER use angle brackets `<>` in string values** (e.g. `"<your_app>"`, `"<AUTHOR>"`). The TheSys platform pre-processes JS files and angle brackets in strings cause silent module loading failures. Use plain text placeholders like `TODO_REPLACE` instead.
 
 ## CRITICAL: Boilerplate Section
 When creating a NEW .js file, you MUST copy the COMPLETE boilerplate from an existing working file (e.g. `EuGenIA_Audit_Control_INV.js`). The boilerplate is everything after the `///////////////////////////////////` separator and includes:

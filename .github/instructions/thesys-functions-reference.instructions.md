@@ -17,6 +17,9 @@ TheSys functions are **server-side JavaScript** modules executed inside the TheS
 
 - Use `var` (not `let`/`const`).
 - No ES6+ features (no arrow functions, no template literals, no destructuring).
+- **NEVER use angle brackets `<>` in string values** (e.g. `"<your_app>"`, `"<something>"`). The platform pre-processes JS files and angle brackets cause the entire module to silently fail to load — no error, no function registration, nothing appears.
+- Standard Java interop is available via `ModuleUtils`, `TheSysModuleFunctionResult`, `File`, etc.
+- No ES6+ features (no arrow functions, no template literals, no destructuring).
 - Standard Java interop is available via `ModuleUtils`, `TheSysModuleFunctionResult`, `File`, etc.
 - There is no `require()` or module import system; each `.js` file is a self-contained module.
 
@@ -45,21 +48,7 @@ Every TheSys `.js` file follows this standard skeleton:
 │     - addFunctions(), removeFunctions()         │
 │     - getWrapperModuleId(), getWebPortalModuleId│
 │     - setupDataStoreHints(), logEvent()         │
-│     - logFine/Info/Warning/Severe()             │
-│     - getModuleName(), getRequestContext()      │
-│     - getLogger(), getJavaClass(), helpDocument()│
-│     - Java type declarations (Util, Level, etc.)│
-│     - Module state vars (thesys_moduleName etc.)│
-│     - initialize() — platform bootstrap         │
 └─────────────────────────────────────────────────┘
-
-> **CRITICAL:** When creating a new .js file, ALWAYS copy the COMPLETE
-> boilerplate from an existing working file (e.g. `EuGenIA_Audit_Control_INV.js`).
-> A simplified/stub boilerplate (e.g. `getWrapperModuleId()` returning `""`
-> or missing `initialize()`, `getModuleName()`, `logInfo()`) will cause
-> function registration to SILENTLY FAIL — the function will not appear
-> in the platform. The boilerplate must use `addcommandv1` (not the
-> older `addcommand`).
 ```
 
 ### 1.3 Function Signature

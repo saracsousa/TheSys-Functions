@@ -4,11 +4,11 @@
 // ============================================================
 //  THESYS MODULE TEMPLATE
 //  Copy this file as a starting point for new TheSys functions.
-//  Replace <MODULE_NAME> and <AUTHOR> with your values.
+//  Replace all TODO_REPLACE markers with your values.
 // ============================================================
 
 // #### Useful global variables ####
-var objectSpace = "<your_app>";   // e.g. "sara", "nexus", "coolops"
+var objectSpace = "TODO_REPLACE";   // MUST replace: e.g. "sara", "nexus", "coolops"
 var debug = 1;
 var defaultLogLevel = "WARNING";
 // ##################################
@@ -100,10 +100,10 @@ function startModule() {
 
   var functions = [
     {
-      name: "myFunction",
-      path: "/ai/<app>/myFunction",
+      name: "TODO_REPLACE",
+      path: "/ai/TODO_REPLACE/TODO_REPLACE",
       parameters: "THESYS.ALLPARAMETERS.JSON*string",
-      description: "Describe what this function does @Authors:<AUTHOR>@"
+      description: "TODO_REPLACE @Authors:TODO_REPLACE@"
     }
   ];
 
