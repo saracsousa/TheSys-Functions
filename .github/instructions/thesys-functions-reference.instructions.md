@@ -296,8 +296,9 @@ These functions build SQL queries and execute them against Google BigQuery via `
 - **Input:** Optional JSON `{"distrito": "...", "concelho": "...", "freguesia": "..."}`
 - **What it does:** Counts distinct service accounts grouped by distrito, concelho, and freguesia. Unions data from both HFC and FTTH cadastro tables. Supports optional filters.
 - **BigQuery tables:**
-  - `ops-dpt-lab-204386.topology.hfc_tabela_centralizada_cadastro`
-  - `ops-dpt-lab-204386.topology.ftth_tabela_centralizada_cadastro`
+  - `ops-dpt-lab-204386.topology.hfc_tabela_centralizada_cadastro` (partitioned by `day_part`)
+  - `ops-dpt-lab-204386.topology.ftth_tabela_centralizada_cadastro` (partitioned by `day_part`)
+- **Partition filter:** `day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` — applied inside each SELECT of the UNION
 - **Returns:** `{ por_distrito: [{distrito, count_sa}], por_concelho: [{distrito, concelho, count_sa}], por_freguesia: [{distrito, concelho, freguesia, count_sa}] }`
 
 ---
@@ -575,6 +576,63 @@ SELECT * FROM (SELECT ... UNION ALL SELECT ...) WHERE ...
 -- CORRECT:
 SELECT * FROM (SELECT ... UNION ALL SELECT ...) AS t WHERE ...
 ```
+
+### 3.10 BigQuery Partition Filter Requirement (`day_part`)
+
+Many BigQuery tables in the `topology`, `problem_management`, `trin`, and other datasets are **partitioned by `day_part`** (a DATE column). BigQuery enforces a partition filter — queries without one fail with:
+
+> `Cannot query over table '...' without a filter over column(s) 'day_part' that can be used for partition elimination`
+
+**When creating a new function that queries BigQuery, the agent MUST ask the user:**
+
+> Does the table(s) you want to query require a `day_part` partition filter?
+> - **Yes** — I will add a `day_part` filter. What time window? (default: last 2 days)
+> - **No** — No partition filter needed.
+> - **I don't know** — I will add a safe default (`day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)`) which can be removed later if not needed.
+
+This should be asked as a **survey-style question** before generating the SQL.
+
+**Standard patterns (pick the one that fits):**
+
+| Use case | Filter | Example |
+|----------|--------|---------|
+| Latest snapshot (cadastro, parques) | `WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` | `EUGenIA_cadastro_centralizado.js` |
+| Latest partition only | `WHERE day_part = (SELECT MAX(day_part) FROM table)` | `getParqueByCell` |
+| Historical range | `WHERE day_part > "2020-01-01"` | `investigationByTrinId` |
+| Configurable window | `WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL N DAY)` | `getGuiasHistoricoByCellDate` |
+
+**Important:** When using UNION ALL across partitioned tables, the `day_part` filter must be applied **inside each SELECT** of the union, not on the outer query:
+
+```sql
+-- CORRECT:
+SELECT col FROM table_a WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+UNION ALL
+SELECT col FROM table_b WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+
+-- WRONG (partition filter on outer query does not push down):
+SELECT col FROM (
+  SELECT col FROM table_a UNION ALL SELECT col FROM table_b
+) AS t WHERE day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+```
+
+### 3.11 `objectSpace` — Auto-Inference Rule
+
+The `objectSpace` variable should be **inferred automatically** by the agent from the function's `path` prefix — do NOT ask the user.
+
+| Function path | Inferred `objectSpace` |
+|--------------|------------------------|
+| `/ai/nexus/...` | `"nexus"` |
+| `/ai/sara/...` | `"sara"` |
+| `/ai/coolops/...` | `"coolops"` |
+| `/ai/guides/...` | `"guides"` |
+| `/ai/cadastro/...` | `"cadastro"` |
+| `/ai/e2e/...` | `"e2e"` |
+| `/dpt/...` | `"dpt"` |
+| `/skills/...` | `"skills"` |
+
+If the path does not match any known prefix, use the second segment of the path (e.g., `/ai/myapp/fn` → `"myapp"`).
+If the user explicitly provides an objectSpace, use that instead.
+
 ---
 
 ## 4. Quick Reference: All Registered Functions
