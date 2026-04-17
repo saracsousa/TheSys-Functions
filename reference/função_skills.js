@@ -1,160 +1,430 @@
 /*jslint node: true */
 "use strict";
 
-// ============================================================
-//  THESYS MODULE TEMPLATE
-//  Copy this file as a starting point for new TheSys functions.
-//  Replace all TODO_REPLACE markers with your values.
-// ============================================================
-
-// #### Useful global variables ####
-var objectSpace = "TODO_REPLACE";   // MUST replace: e.g. "sara", "nexus", "coolops"
+// #### Usefull global variables ####
+var objectSpace = "helloworld";
 var debug = 1;
 var defaultLogLevel = "WARNING";
 // ##################################
 
+// #####################################################
+// This function prints 'Hello World' in the console.
+//  
+// Type in the console:
+// console$> /demo/helloWorld ""
+//
+// #####################################################
+function helloWorld(ticket, params) {
+  ticket.addOutput('Hello world!');
+
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+}
 
 // #####################################################
-//  YOUR BUSINESS FUNCTION(S) GO HERE
+// This function takes 2 parameters and sums then, printing the result in the console.
+//  
+// Type in the console:
+// console$> /demo/math/sum "2" "3"
+//
 // #####################################################
+function sumAPlusB(ticket, params) {
+  var a = params.get(0);
+  var b = params.get(1);
 
-/**
- * Example function — replace with your logic.
- *
- * @param {Object} ticket  - TheSys execution context
- * @param {Object} params  - Indexed parameter list (params.get(0), etc.)
- */
-function myFunction(ticket, params) {
-  var result = { content: "", logs: "" };
-  var STEP = "INIT";
+  var result = a + b;
 
-  ticket.addOutput("[myFunction] START");
-  logInfo("myFunction", "Function called");
+  ticket.addOutput(a + ' + ' + b + ' = ' + result);
 
-  // --- 1. Parse input ---
-  STEP = "PARSE_INPUT";
-  ticket.addOutput("[myFunction] STEP: " + STEP);
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+}
+
+// #####################################################
+// This function takes one string parameter (label) and returns
+// a list of traditional Portuguese dishes.
+//
+// Type in the console:
+// console$> /skills/getPortugueseDishes "pratos"
+//
+// Returns: JSON with content (array of dishes) and logs
+// #####################################################
+function getPortugueseDishes(ticket, params) {
   var rawInput = "";
+  var label = "";
+  var result = { content: "", logs: "" };
+
+  // Log all params received for debugging
+  ticket.addOutput("getPortugueseDishes: params.length=" + params.length);
+  for (var i = 0; i < params.length; i++) {
+    ticket.addOutput("getPortugueseDishes: params[" + i + "]=" + params.get(i));
+  }
+
+  // Safely get first param
   try {
     if (params.length > 0 && params.get(0) !== null && params.get(0) !== undefined) {
       rawInput = "" + params.get(0);
     }
-  } catch (e) { rawInput = ""; }
-
-  var parsedInput = null;
-  if (rawInput !== "") {
-    try {
-      var jsonObject = JSON.parse(rawInput);
-      if (jsonObject && Array.isArray(jsonObject) && jsonObject.length >= 1) {
-        parsedInput = jsonObject[0];
-      } else if (jsonObject && typeof jsonObject === "object" && !Array.isArray(jsonObject)) {
-        parsedInput = jsonObject;
-      } else {
-        parsedInput = jsonObject;
-      }
-    } catch (e) {
-      parsedInput = rawInput.trim();
-    }
+  } catch (e) {
+    rawInput = "";
   }
 
-  // Extract the filter value (adjust keys to your use case)
-  var filterValue = "";
-  if (parsedInput !== null && parsedInput !== undefined) {
-    if (typeof parsedInput === "object") {
-      filterValue = parsedInput.input || "";
-    } else {
-      filterValue = ("" + parsedInput).trim();
-    }
-  }
+  ticket.addOutput("getPortugueseDishes: rawInput=" + rawInput);
 
-  ticket.addOutput("[myFunction] filterValue=" + filterValue);
-  logInfo("myFunction", "filterValue=" + filterValue);
-
-  // --- 2. Your logic here (BigQuery / TRIN / Elastic / etc.) ---
-  // IMPORTANT: When using subqueries in BigQuery, always add an alias: FROM (...) AS t
+  // Extract label from input (supports JSON or plain string)
   try {
-    STEP = "QUERY_DATA";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    logInfo("myFunction", "Executing BigQuery query");
-
-    // Example: BigQuery query
-    // var sql_query = 'SELECT * FROM `project.dataset.table` WHERE column = "' + filterValue + '" LIMIT 100';
-    // var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
-    // if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
-    //   result.logs = "ERROR: BigQuery query failed";
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs + " | SQL=" + sql_query);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // var data = JSON.parse(runTicketGCP.getResult().getObject());
-    // if (data.Result === undefined) {
-    //   result.logs = "ERROR: " + (data.Error || "unknown");
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // ticket.addOutput("[myFunction] rows=" + (data.Result ? data.Result.length : 0));
-    // result.content = data.Result;
-
-    // --- 3. Return result ---
-    STEP = "COMPOSE_RESPONSE";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    result.content = "Hello from myFunction!";
-    result.logs = "Executed successfully with filterValue=" + filterValue;
-
-    ticket.addOutput("[myFunction] SUCCESS: " + result.logs);
-    logInfo("myFunction", result.logs);
-    ticket.getResult().setObject(JSON.stringify(result));
-    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
-
-  } catch (err) {
-    result.logs = "EXCEPTION at STEP=" + STEP + ": " + err;
-    ticket.addOutput("[myFunction] " + result.logs);
-    logSevere("myFunction", result.logs);
-    ticket.getResult().setObject(JSON.stringify(result));
-    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    var jsonObject = JSON.parse(rawInput);
+    label = jsonObject.input || jsonObject.label || "";
+  } catch (e) {
+    label = rawInput ? rawInput.trim() : "";
   }
+
+  ticket.addOutput("getPortugueseDishes: label=" + label);
+
+  var dishes = [
+    'Cozido à Portuguesa',
+    'Francesinha',
+    'Leitão da Bairrada',
+    'Carne de Porco à Alentejana',
+    'Posta à Mirandesa',
+    'Bacalhau com Natas',
+    'Polvo à Lagareiro',
+    'Sardinhas Assadas',
+    'Cataplana de Marisco',
+    'Bacalhau à Brás',
+    'Caldo Verde',
+    'Migas de Couve',
+    'Açorda de Alho',
+    'Grão com Espinafres',
+    'Sopa de Legumes'
+  ];
+
+  ticket.addOutput("getPortugueseDishes: total dishes=" + dishes.length);
+
+  // Log each dish
+  for (var idx = 0; idx < dishes.length; idx++) {
+    ticket.addOutput("getPortugueseDishes: dish[" + idx + "]=" + dishes[idx]);
+  }
+
+  result.content = dishes;
+  result.logs = "Returned " + dishes.length + " Portuguese dishes" + (label !== "" ? " for label '" + label + "'" : "");
+  ticket.addOutput("getPortugueseDishes: " + result.logs);
+
+  var resultJson = JSON.stringify(result);
+  ticket.addOutput("getPortugueseDishes: result=" + resultJson);
+  ticket.getResult().setObject(resultJson);
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
 }
 
+// #####################################################
+// This function supports a meny entry. It is a simple form use case.
+//  
+// Type in the console:
+// console$> /demo/portal/menu1 ""
+//
+// If the output is html, it's all done :)
+// 
+// Go to the webportal and check a menu entry called "Demo -> Menu 1". Enjoy. You can change this file on the fly.
+//
+// #####################################################
+function demoMenu1(ticket, params) {
+  var parameters = {};
+
+  try {
+    if (params.length > 0 && params.get(0).length > 0) {
+      parameters = JSON.parse(params.get(0));
+    }
+  } catch (e) {
+  }
+
+  /*!INLINE!
+   <div class="col-12"><h1>Hello world</h1></div>
+   
+   <div class="col-12">
+   <form method="POST" action="THESYS.WEBCONTROLLER" class="form-horizontal">
+   <input type="hidden" name="target" value="THESYS.MENUID">
+   Texto a testar <input type="text" name="text2find" class="form-control" value="" placeholder="Introduza o texto que sera enviado no form"/>
+   <button type="submit" class="btn btn-primary">Send text</button>
+   </form>
+   </div>
+   <br>&nbsp;<br>&nbsp;<br>&nbsp;<br>&nbsp;
+   <b>Lista de parametros passada para a função:</b>
+   <table class="table table-condensed table-hover">
+   <thead>
+   <tr><th>Posicao</th><th>Valor</th></tr>
+   </thead>
+   <tbody>
+   !INLINE!*/
+  for (var param in params) {
+    ticket.addOutput("<tr><td>" + param + "</td><td>" + params.get(param) + "</td></tr>");
+  }
+  /*!INLINE!
+   </table>
+   
+   <b>Lista de parametros passada do WebPortal</b>
+   <table class="table table-condensed table-hover">
+   <thead>
+   <tr><th>Parametro</th><th>Valor</th></tr>
+   </thead>
+   <tbody>
+   !INLINE!*/
+  for (var param in parameters) {
+    ticket.addOutput("<tr><td>" + param + "</td><td>" + parameters[param] + "</td></tr>");
+  }
+  /*!INLINE!
+   </tbody>
+   </table>
+   !INLINE!*/
+
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+}
+
+// #####################################################
+// This function supports a menu entry. It is a simple form use case.
+//  
+// Type in the console:
+// console$> /demo/portal/menuPing ""
+//
+// If the output is html, it's all done :)
+// 
+// Go to the webportal and check a menu entry called "Demo -> Menu Ping". Enjoy. You can change this file on the fly.
+//
+// #####################################################
+function demoMenuPing(ticket, params) {
+  var parameters = {};
+  var ip = '';
+
+  try {
+    if (params.length > 0 && params.get(0).length > 0) {
+      parameters = JSON.parse(params.get(0));
+    }
+  } catch (e) {
+  }
+
+  /*!INLINE!
+   <div class="col-12"><h1>Hello world</h1></div>
+   
+   !INLINE!*/
+
+  if (parameters.action == 'ping') {
+    ip = parameters.ip;
+    if (ip === '') {
+      ticket.addOutput("<font color=red>Please specify a valid IP</font>");
+    } else {
+      ticket.addOutput("Executing: <b>/netutils/ip/pingc \"" + ip + "\" \"4\"</b><br><br>");
+
+      var runTicket = ModuleUtils.runFunction('/netutils/ip/pingc', ticket.getRequestContext(), ip, 4);
+      if (ModuleUtils.waitForTicketsSuccess(runTicket)) {
+        var idx = 0;
+        while (idx < runTicket.getOutputSize()) {
+          var line = runTicket.getOutput(idx).toString();
+
+          line = line.replaceAll('0% packet loss', '<b><font color=green>0% packet loss</font></b>');
+
+          ticket.addOutput(line + '<br>');
+
+          idx++;
+        }
+
+        logEvent(ticket.getRequestContext(), "PING_SUCCESS", {ip: ip});
+      } else {
+        ticket.addOutput("<font color=red>General error pinging '" + ip + "'</font>");
+        logEvent(ticket.getRequestContext(), "PING_FAILED", {ip: ip});
+      }
+    }
+  }
+
+  /*!INLINE!
+   </tbody>
+   </table>
+   <br><br>
+   <form method="POST" action="THESYS.WEBCONTROLLER" class="form-horizontal">
+   <input type="hidden" name="target" class="form-control" value="THESYS.MENUID">
+   
+   <input type="hidden" name="action" class="form-control" value="ping">
+   Target <input type="text" name="ip" class="form-control" value="'+ip+'" placeholder="Please input target to ping"/>
+   <button type="submit" class="btn btn-primary">Ping target ...</button>
+   </form>
+   </div>
+   <br>&nbsp;<br>&nbsp;<br>&nbsp;<br>&nbsp;
+   <b>Lista de parametros passada para a função:</b>
+   <table class="table table-condensed table-hover">
+   <thead>
+   <tr><th>Posicao</th><th>Valor</th></tr>
+   </thead>
+   <tbody>
+   !INLINE!*/
+  for (var param in params) {
+    ticket.addOutput("<tr><td>" + param + "</td><td>" + params.get(param) + "</td></tr>");
+  }
+  /*!INLINE!
+   </table>
+   
+   <b>Lista de parametros passada do WebPortal</b>
+   <table class="table table-condensed table-hover">
+   <thead>
+   <tr><th>Parametro</th><th>Valor</th></tr>
+   </thead>
+   <tbody>
+   !INLINE!*/
+  for (var param in parameters) {
+    ticket.addOutput("<tr><td>" + param + "</td><td>" + parameters[param] + "</td></tr>");
+  }
+  /*!INLINE!
+   </tbody>
+   </table>
+   !INLINE!*/
+
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+}
+
+// #####################################################
+// This function supports a menu entry. It is a simple form use case.
+//  
+// Go to the webportal and check a menu entry called "Demo -> Menu Upload File". Enjoy. You can change this file on the fly.
+//
+// #####################################################
+function demoMenuUploadFile(ticket, params) {
+  var parameters = {};
+
+  try {
+    if (params.length > 0 && params.get(0).length > 0) {
+      parameters = JSON.parse(params.get(0));
+    }
+  } catch (e) {
+  }
+
+  /*!INLINE!
+   <div class="col-12"><h1>Hello world</h1></div>
+   !INLINE!*/
+
+  if (parameters.action == 'upload') {
+    var file = parameters.file ? parameters.file : "";
+    if (file === '') {
+      ticket.addOutput("<font color=red>Please specify a valid file!</font>");
+    } else {
+      ticket.addOutput("<b>File details</b><br>");
+      ticket.addOutput("&nbsp;&nbsp;Name: " + parameters["file.name"] + "<br>");
+      ticket.addOutput("&nbsp;&nbsp;Location: " + parameters["file.location"] + "<br>");
+      ticket.addOutput("&nbsp;&nbsp;Size: " + new File(parameters["file.location"]).length() + "<br>");
+    }
+  }
+
+  /*!INLINE!
+   </tbody>
+   </table>
+   <br><br>
+   <form method="POST" action="THESYS.WEBCONTROLLER" class="form-horizontal" enctype="multipart/form-data">
+   <input type="hidden" name="target" value="THESYS.MENUID">
+   
+   <input type="hidden" name="action" value="upload">
+   Target <input type="file" name="file" class="form-control" placeholder="Please select file"/>
+   <button type="submit" class="btn btn-primary">Upload file ...</button>
+   </form>
+   </div>
+   <br>&nbsp;<br>&nbsp;<br>&nbsp;<br>&nbsp;
+   <b>Lista de parametros passada para a função:</b>
+   <table class="table table-condensed table-hover">
+   <thead>
+   <tr><th>Posicao</th><th>Valor</th></tr>
+   </thead>
+   <tbody>
+   !INLINE!*/
+  for (var param in params) {
+    ticket.addOutput("<tr><td>" + param + "</td><td>" + params.get(param) + "</td></tr>");
+  }
+  /*!INLINE!
+   </table>
+   
+   <b>Lista de parametros passada do WebPortal</b>
+   <table class="table table-condensed table-hover">
+   <thead>
+   <tr><th>Parametro</th><th>Valor</th></tr>
+   </thead>
+   <tbody>
+   !INLINE!*/
+  for (var param in parameters) {
+    ticket.addOutput("<tr><td>" + param + "</td><td>" + parameters[param] + "</td></tr>");
+  }
+  /*!INLINE!
+   </tbody>
+   </table>
+   !INLINE!*/
+
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+}
 
 // ####################### Start module ###########################
 // # Called every time module starts                              #
-// # When this file is saved, the module is stopped and started   #
+// # When this file is saved, thoe module is stopped and started  #
 // ################################################################
 function startModule() {
   logInfo("startModule", "Starting ...");
 
   var functions = [
     {
-      name: "TODO_REPLACE",
-      path: "/ai/TODO_REPLACE/TODO_REPLACE",
-      parameters: "THESYS.ALLPARAMETERS.JSON*string",
-      description: "TODO_REPLACE @Authors:TODO_REPLACE@"
+     name: "getPortugueseDishes",
+     path: "/skills/getPortugueseDishes",
+     parameters: "input*string,extra*string",
+     description: "Returns a list of traditional Portuguese dishes@Authors:Skills@"
     }
+    /*{
+     name: "helloWorld",
+     path: "/demo/helloWorld",
+     parameters: "",
+     description: "HelloWorld function@Authors:TheSys@"
+     },
+     {
+     name: "sumAPlusB",
+     path: "/demo/math/sum",
+     parameters: "a*integer,b*integer",
+     description: "Sum function@Authors:TheSys@"
+     },
+     {
+     name: "demoMenu1",
+     path: "/demo/portal/menu1",
+     parameters: "THESYS.ALLPARAMETERS.JSON*string",
+     description: "Function for Menu 1@Authors:TheSys@",
+     menu: {
+     path: "Demo|Menu 1"
+     }
+     },
+     {
+     name: "demoMenuPing",
+     path: "/demo/portal/menuPing",
+     parameters: "THESYS.ALLPARAMETERS.JSON*string",
+     description: "Function for Menu Ping@Authors:TheSys@",
+     menu: {
+     path: "Demo|Menu Ping"
+     }
+     },
+     {
+     name: "demoMenuUploadFile",
+     path: "/demo/portal/menuUploadFile",
+     parameters: "THESYS.ALLPARAMETERS.JSON*string",
+     description: "Function for Menu UploadFile@Authors:TheSys@",
+     menu: {
+     path: "Demo|Menu Upload File"
+     }
+     }*/
   ];
 
   addFunctions(functions, true);
   removeFunctions(functions);
 
   logInfo("startModule", "Started.");
+
   logEvent(getRequestContext().getUser().getName(), "MODULE_STARTED", "");
 }
 
-
 // ####################### Stop module ############################
 // # Called every time module stops                               #
-// # When this file is saved, the module is stopped and started   #
+// # When this file is saved, thoe module is stopped and started  #
 // ################################################################
 function stopModule() {
   logInfo("stopModule", "Stopping ...");
   logInfo("stopModule", "Stopped.");
+
   logEvent(getRequestContext().getUser().getName(), "MODULE_STOPPED", "");
 }
-
 
 ///////////////////////////////////
 // Internal code - leave it asis //
@@ -348,6 +618,7 @@ function getWebPortalModuleId() {
 
 function logEvent(user, action, data) {
   try {
+    // This is because for a while, the standard template had a error in first parameter - it was passing getRequestContext() and not getRequestContext().getUser().getName()
     user = user.getUser().getName();
   } catch (e) {
   }
@@ -396,92 +667,6 @@ function getRequestContext() {
 
 function getLogger() {
   return thesys_logger;
-}
-
-function getJavaClass(name) {
-  if (thesys_javaClassCache.hasOwnProperty(name)) {
-    return thesys_javaClassCache[name];
-  }
-
-  thesys_javaClassCache[name] = Java.type(name);
-
-  return thesys_javaClassCache[name];
-}
-
-var Util = null;
-var Level = null;
-var Exception = null;
-var Long = null;
-var Integer = null;
-var ArrayList = null;
-var TheSysController = null;
-var RequestContext = null;
-var ModuleUtils = null;
-var TheSysModuleFunctionResult = null;
-var FileInputStream = null;
-var BufferedReader = null;
-var FileReader = null;
-var PrintWriter = null;
-var File = null;
-var StringTokenizer = null;
-var SimpleDateFormat = null;
-var Transation = null;
-var HashMap = null;
-var GregorianCalendar = null;
-var Calendar = null;
-var Locale = null;
-var JavaDate = null;
-
-var thesys_moduleName = null;
-var thesys_moduleRequestContext = null;
-var thesys_logger = null;
-var thesys_initialized = false;
-var thesys_newBaseFormat = true;
-var thesys_javaClassCache = {};
-
-function initialize(moduleName, moduleRequestContext, wrapperModuleName) {
-  if (thesys_initialized) {
-    return;
-  }
-
-  if (wrapperModuleName) {
-    thesys_wrapperModuleName = wrapperModuleName;
-  }
-
-  thesys_moduleName = moduleName;
-  thesys_moduleRequestContext = moduleRequestContext;
-
-  Util = getJavaClass('com.zon.gopm.util.Util');
-  Level = getJavaClass('java.util.logging.Level');
-  Exception = getJavaClass('java.lang.Exception');
-  Long = getJavaClass('java.lang.Long');
-  Integer = getJavaClass('java.lang.Integer');
-  ArrayList = getJavaClass('java.util.ArrayList');
-  TheSysController = getJavaClass('com.nos.gopm.thesys.controller.TheSysController');
-  RequestContext = getJavaClass('com.nos.gopm.thesys.controller.RequestContext');
-  ModuleUtils = getJavaClass('com.nos.gopm.modules.ModuleUtils');
-  TheSysModuleFunctionResult = getJavaClass('com.nos.gopm.thesys.modules.TheSysModuleFunctionResult');
-  FileInputStream = getJavaClass('java.io.FileInputStream');
-  BufferedReader = getJavaClass('java.io.BufferedReader');
-  FileReader = getJavaClass('java.io.FileReader');
-  PrintWriter = getJavaClass('java.io.PrintWriter');
-  File = getJavaClass('java.io.File');
-  StringTokenizer = getJavaClass('java.util.StringTokenizer');
-  SimpleDateFormat = getJavaClass('java.text.SimpleDateFormat');
-  Transation = getJavaClass('com.nos.gopm.thesys.client.Transation');
-  HashMap = getJavaClass('java.util.HashMap');
-  GregorianCalendar = getJavaClass('java.util.GregorianCalendar');
-  Calendar = getJavaClass('java.util.Calendar');
-  Locale = getJavaClass('java.util.Locale');
-  JavaDate = getJavaClass('java.util.Date');
-
-  if (typeof defaultLogLevel === "undefined") {
-    thesys_logger = Util.getLogger(getModuleName(), "INFO");
-  } else {
-    thesys_logger = Util.getLogger(getModuleName(), defaultLogLevel);
-  }
-
-  thesys_initialized = true;
 }
 
 function getJavaClass(name) {

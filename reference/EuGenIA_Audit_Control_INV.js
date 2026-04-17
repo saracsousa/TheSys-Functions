@@ -1,139 +1,162 @@
 /*jslint node: true */
 "use strict";
 
-// ============================================================
-//  THESYS MODULE TEMPLATE
-//  Copy this file as a starting point for new TheSys functions.
-//  Replace all TODO_REPLACE markers with your values.
-// ============================================================
-
-// #### Useful global variables ####
-var objectSpace = "TODO_REPLACE";   // MUST replace: e.g. "sara", "nexus", "coolops"
+// #### Usefull global variables ####
+var objectSpace = "sara";
 var debug = 1;
 var defaultLogLevel = "WARNING";
 // ##################################
 
-
 // #####################################################
-//  YOUR BUSINESS FUNCTION(S) GO HERE
+// This function lists old investigations (not updated
+// in 3+ months) assigned to a specific user.
+//
+// Input: JSON with owner_user_username
+//   e.g. {"owner_user_username": "john.doe"}
+// Returns: list of stale investigations for that user
 // #####################################################
-
-/**
- * Example function — replace with your logic.
- *
- * @param {Object} ticket  - TheSys execution context
- * @param {Object} params  - Indexed parameter list (params.get(0), etc.)
- */
-function myFunction(ticket, params) {
+function staleInvestigationsByUser(ticket, params) {
+  var rawInput = params.get(0);
+  var ownerUsername = "";
   var result = { content: "", logs: "" };
-  var STEP = "INIT";
 
-  ticket.addOutput("[myFunction] START");
-  logInfo("myFunction", "Function called");
-
-  // --- 1. Parse input ---
-  STEP = "PARSE_INPUT";
-  ticket.addOutput("[myFunction] STEP: " + STEP);
-  var rawInput = "";
+  // Parse input — support JSON or plain string
   try {
-    if (params.length > 0 && params.get(0) !== null && params.get(0) !== undefined) {
-      rawInput = "" + params.get(0);
-    }
-  } catch (e) { rawInput = ""; }
-
-  var parsedInput = null;
-  if (rawInput !== "") {
-    try {
-      var jsonObject = JSON.parse(rawInput);
-      if (jsonObject && Array.isArray(jsonObject) && jsonObject.length >= 1) {
-        parsedInput = jsonObject[0];
-      } else if (jsonObject && typeof jsonObject === "object" && !Array.isArray(jsonObject)) {
-        parsedInput = jsonObject;
-      } else {
-        parsedInput = jsonObject;
-      }
-    } catch (e) {
-      parsedInput = rawInput.trim();
-    }
+    var jsonObject = JSON.parse(rawInput);
+    ownerUsername = jsonObject.owner_user_username || jsonObject.input || "";
+  } catch (e) {
+    ownerUsername = rawInput ? rawInput.trim() : "";
   }
 
-  // Extract the filter value (adjust keys to your use case)
-  var filterValue = "";
-  if (parsedInput !== null && parsedInput !== undefined) {
-    if (typeof parsedInput === "object") {
-      filterValue = parsedInput.input || "";
-    } else {
-      filterValue = ("" + parsedInput).trim();
-    }
-  }
+  ticket.addOutput("staleInvestigationsByUser: ownerUsername=" + ownerUsername);
 
-  ticket.addOutput("[myFunction] filterValue=" + filterValue);
-  logInfo("myFunction", "filterValue=" + filterValue);
-
-  // --- 2. Your logic here (BigQuery / TRIN / Elastic / etc.) ---
-  // IMPORTANT: When using subqueries in BigQuery, always add an alias: FROM (...) AS t
-  try {
-    STEP = "QUERY_DATA";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    logInfo("myFunction", "Executing BigQuery query");
-
-    // Example: BigQuery query
-    // var sql_query = 'SELECT * FROM `project.dataset.table` WHERE column = "' + filterValue + '" LIMIT 100';
-    // var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
-    // if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
-    //   result.logs = "ERROR: BigQuery query failed";
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs + " | SQL=" + sql_query);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // var data = JSON.parse(runTicketGCP.getResult().getObject());
-    // if (data.Result === undefined) {
-    //   result.logs = "ERROR: " + (data.Error || "unknown");
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // ticket.addOutput("[myFunction] rows=" + (data.Result ? data.Result.length : 0));
-    // result.content = data.Result;
-
-    // --- 3. Return result ---
-    STEP = "COMPOSE_RESPONSE";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    result.content = "Hello from myFunction!";
-    result.logs = "Executed successfully with filterValue=" + filterValue;
-
-    ticket.addOutput("[myFunction] SUCCESS: " + result.logs);
-    logInfo("myFunction", result.logs);
-    ticket.getResult().setObject(JSON.stringify(result));
-    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
-
-  } catch (err) {
-    result.logs = "EXCEPTION at STEP=" + STEP + ": " + err;
-    ticket.addOutput("[myFunction] " + result.logs);
-    logSevere("myFunction", result.logs);
+  if (!ownerUsername) {
+    result.logs = "ERROR: owner_user_username parameter is required";
+    ticket.addOutput("staleInvestigationsByUser: " + result.logs);
     ticket.getResult().setObject(JSON.stringify(result));
     ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    return;
   }
-}
 
+  // Calculate date 3 months ago (epoch ms for comparison with MAC API timestamps)
+  var now = new Date();
+  var threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+  var cutoffTimestamp = threeMonthsAgo.getTime();
+
+  ticket.addOutput("staleInvestigationsByUser: cutoffTimestamp=" + cutoffTimestamp + " (" + threeMonthsAgo.toISOString() + ")");
+
+  // Search for open investigations assigned to this user
+  var templateNameQuery = "template_name=~eq~Investigation";
+  var statusNotClosedQuery = "&status=~neq~CLOSED";
+  var statusNotCancelledQuery = "&status=~neq~CANCELLED";
+  var ownerQuery = "&fields.owner_user.username=~eq~" + ownerUsername;
+
+  var q = {
+    skip: 0,
+    limit: 1000,
+    sort_order: 1,
+    sort_field: "_updated_date",
+    filters: [templateNameQuery + statusNotClosedQuery + statusNotCancelledQuery + ownerQuery],
+    "return_fields": ""
+  };
+
+  ticket.addOutput("staleInvestigationsByUser: query=" + JSON.stringify(q));
+
+  var runTicket = ModuleUtils.runFunction('/mac/activities/search', ticket.getRequestContext(), JSON.stringify(q));
+  if (!ModuleUtils.waitForTicketsSuccess(runTicket)) {
+    result.logs = "ERROR: Failed to search investigation activities.";
+    ticket.addOutput("staleInvestigationsByUser: " + result.logs);
+    ticket.getResult().setObject(JSON.stringify(result));
+    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    return;
+  }
+
+  var resultRaw = runTicket.getResult().getObject();
+  var resultParsed;
+  try {
+    resultParsed = JSON.parse(resultRaw.toString());
+  } catch (e) {
+    result.logs = "ERROR: Failed to parse search result: " + e;
+    ticket.addOutput("staleInvestigationsByUser: " + result.logs);
+    ticket.getResult().setObject(JSON.stringify(result));
+    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    return;
+  }
+
+  // Extract investigations array from response
+  var investigations = null;
+  if (Array.isArray(resultParsed)) {
+    investigations = resultParsed;
+  } else if (resultParsed.data_output && resultParsed.data_output.result && Array.isArray(resultParsed.data_output.result)) {
+    investigations = resultParsed.data_output.result;
+  } else if (resultParsed.data && Array.isArray(resultParsed.data)) {
+    investigations = resultParsed.data;
+  } else if (resultParsed.results && Array.isArray(resultParsed.results)) {
+    investigations = resultParsed.results;
+  }
+
+  var staleList = [];
+
+  if (Array.isArray(investigations)) {
+    for (var i = 0; i < investigations.length; i++) {
+      var inv = investigations[i];
+      var updatedDate = inv._updated_date || null;
+
+      // Check if updated_date is older than 3 months (epoch ms comparison)
+      if (updatedDate && Number(updatedDate) < cutoffTimestamp) {
+        // Extract priority safely
+        var priorityRaw = inv.fields && inv.fields.priority ? inv.fields.priority : null;
+        var priority = null;
+        if (priorityRaw) {
+          if (typeof priorityRaw === "string") {
+            priority = priorityRaw;
+          } else if (Array.isArray(priorityRaw) && priorityRaw.length > 0) {
+            priority = priorityRaw[0].value || priorityRaw[0].label || null;
+          } else if (typeof priorityRaw === "object") {
+            priority = priorityRaw.value || priorityRaw.label || null;
+          }
+        }
+
+        staleList.push({
+          _trin_id: inv._trin_id,
+          status: inv.status,
+          priority: priority,
+          _updated_date: inv._updated_date,
+          description: inv.fields && inv.fields.description
+            ? (inv.fields.description.substring ? inv.fields.description.substring(0, 200) : String(inv.fields.description).substring(0, 200))
+            : "",
+          owner_user: inv.fields && inv.fields.owner_user ? inv.fields.owner_user : null
+        });
+      }
+    }
+  }
+
+  result.content = {
+    owner_user_username: ownerUsername,
+    cutoff_timestamp: cutoffTimestamp,
+    stale_count: staleList.length,
+    stale_investigations: staleList
+  };
+  result.logs = "Found " + staleList.length + " stale investigation(s) for user " + ownerUsername;
+
+  ticket.addOutput("staleInvestigationsByUser: " + result.logs);
+  ticket.getResult().setObject(JSON.stringify(result));
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+}
 
 // ####################### Start module ###########################
 // # Called every time module starts                              #
-// # When this file is saved, the module is stopped and started   #
+// # When this file is saved, thoe module is stopped and started  #
 // ################################################################
 function startModule() {
   logInfo("startModule", "Starting ...");
 
   var functions = [
     {
-      name: "TODO_REPLACE",
-      path: "/ai/TODO_REPLACE/TODO_REPLACE",
-      parameters: "THESYS.ALLPARAMETERS.JSON*string",
-      description: "TODO_REPLACE @Authors:TODO_REPLACE@"
+     name: "staleInvestigationsByUser",
+     path: "/ai/sara/staleInvestigationsByUser",
+     parameters: "input*string",
+     description: "Lists open investigations not updated in 3+ months for a given owner_user username @Authors:Sara@"
     }
   ];
 
@@ -141,20 +164,20 @@ function startModule() {
   removeFunctions(functions);
 
   logInfo("startModule", "Started.");
+
   logEvent(getRequestContext().getUser().getName(), "MODULE_STARTED", "");
 }
 
-
 // ####################### Stop module ############################
 // # Called every time module stops                               #
-// # When this file is saved, the module is stopped and started   #
+// # When this file is saved, thoe module is stopped and started  #
 // ################################################################
 function stopModule() {
   logInfo("stopModule", "Stopping ...");
   logInfo("stopModule", "Stopped.");
+
   logEvent(getRequestContext().getUser().getName(), "MODULE_STOPPED", "");
 }
-
 
 ///////////////////////////////////
 // Internal code - leave it asis //
@@ -474,98 +497,3 @@ function initialize(moduleName, moduleRequestContext, wrapperModuleName) {
   Calendar = getJavaClass('java.util.Calendar');
   Locale = getJavaClass('java.util.Locale');
   JavaDate = getJavaClass('java.util.Date');
-
-  if (typeof defaultLogLevel === "undefined") {
-    thesys_logger = Util.getLogger(getModuleName(), "INFO");
-  } else {
-    thesys_logger = Util.getLogger(getModuleName(), defaultLogLevel);
-  }
-
-  thesys_initialized = true;
-}
-
-function getJavaClass(name) {
-  if (thesys_javaClassCache.hasOwnProperty(name)) {
-    return thesys_javaClassCache[name];
-  }
-
-  thesys_javaClassCache[name] = Java.type(name);
-
-  return thesys_javaClassCache[name];
-}
-
-var Util = null;
-var Level = null;
-var Exception = null;
-var Long = null;
-var Integer = null;
-var ArrayList = null;
-var TheSysController = null;
-var RequestContext = null;
-var ModuleUtils = null;
-var TheSysModuleFunctionResult = null;
-var FileInputStream = null;
-var BufferedReader = null;
-var FileReader = null;
-var PrintWriter = null;
-var File = null;
-var StringTokenizer = null;
-var SimpleDateFormat = null;
-var Transation = null;
-var HashMap = null;
-var GregorianCalendar = null;
-var Calendar = null;
-var Locale = null;
-var JavaDate = null;
-
-var thesys_moduleName = null;
-var thesys_moduleRequestContext = null;
-var thesys_logger = null;
-var thesys_initialized = false;
-var thesys_newBaseFormat = true;
-var thesys_javaClassCache = {};
-
-function initialize(moduleName, moduleRequestContext, wrapperModuleName) {
-  if (thesys_initialized) {
-    return;
-  }
-
-  if (wrapperModuleName) {
-    thesys_wrapperModuleName = wrapperModuleName;
-  }
-
-  thesys_moduleName = moduleName;
-  thesys_moduleRequestContext = moduleRequestContext;
-
-  Util = getJavaClass('com.zon.gopm.util.Util');
-  Level = getJavaClass('java.util.logging.Level');
-  Exception = getJavaClass('java.lang.Exception');
-  Long = getJavaClass('java.lang.Long');
-  Integer = getJavaClass('java.lang.Integer');
-  ArrayList = getJavaClass('java.util.ArrayList');
-  TheSysController = getJavaClass('com.nos.gopm.thesys.controller.TheSysController');
-  RequestContext = getJavaClass('com.nos.gopm.thesys.controller.RequestContext');
-  ModuleUtils = getJavaClass('com.nos.gopm.modules.ModuleUtils');
-  TheSysModuleFunctionResult = getJavaClass('com.nos.gopm.thesys.modules.TheSysModuleFunctionResult');
-  FileInputStream = getJavaClass('java.io.FileInputStream');
-  BufferedReader = getJavaClass('java.io.BufferedReader');
-  FileReader = getJavaClass('java.io.FileReader');
-  PrintWriter = getJavaClass('java.io.PrintWriter');
-  File = getJavaClass('java.io.File');
-  StringTokenizer = getJavaClass('java.util.StringTokenizer');
-  SimpleDateFormat = getJavaClass('java.text.SimpleDateFormat');
-  Transation = getJavaClass('com.nos.gopm.thesys.client.Transation');
-  HashMap = getJavaClass('java.util.HashMap');
-  GregorianCalendar = getJavaClass('java.util.GregorianCalendar');
-  Calendar = getJavaClass('java.util.Calendar');
-  Locale = getJavaClass('java.util.Locale');
-  JavaDate = getJavaClass('java.util.Date');
-
-  if (typeof defaultLogLevel === "undefined") {
-    thesys_logger = Util.getLogger(getModuleName(), "INFO");
-  } else {
-    thesys_logger = Util.getLogger(getModuleName(), defaultLogLevel);
-  }
-
-  thesys_initialized = true;
-}

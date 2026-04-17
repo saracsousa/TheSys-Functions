@@ -313,6 +313,18 @@ These functions build SQL queries and execute them against Google BigQuery via `
 - **Partition filter:** `day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` — applied inside each SELECT of the UNION
 - **Returns:** `[{distrito_cliente, concelho_cliente, freguesia_cliente, distinct_sa_count}]`
 
+#### `listarContagensSAsPorLocalidade` — Distinct SA Counts by Location with Filtering
+- **File:** `listarContagensSAsPorLocalidade.js`
+- **Path:** `/ai/greatops/listar_contagens_sa_por_localidade`
+- **Parameters:** `THESYS.ALLPARAMETERS.JSON*string`
+- **Input:** Plain string (e.g. `"ALMADA"`) searches across distrito, concelho, and freguesia (case-insensitive). JSON object `{"distrito": "...", "concelho": "...", "freguesia": "..."}` filters specific columns. Empty for all.
+- **What it does:** Counts distinct service accounts grouped by distrito, concelho, and freguesia. Unions data from both HFC and FTTH cadastro tables. Applies the input as a filter on the location columns using case-insensitive exact match. Filters empty/null service accounts.
+- **BigQuery tables:**
+  - `ops-dpt-lab-204386.topology.hfc_tabela_centralizada_cadastro` (partitioned by `day_part`)
+  - `ops-dpt-lab-204386.topology.ftth_tabela_centralizada_cadastro` (partitioned by `day_part`)
+- **Partition filter:** `day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` — applied inside each SELECT of the UNION
+- **Returns:** `[{distrito, concelho, freguesia, SAs}]`
+
 ---
 
 ### 2.2 TRIN / MAC (Activities API) — Functions That Query the Activities Platform
@@ -669,4 +681,5 @@ If the user explicitly provides an objectSpace, use that instead.
 | `contagemSAsPorLocalidade` | `/ai/cadastro/contagemSAsPorLocalidade` | contagemSAsPorLocalidade.js | BigQuery | AI Query |
 | `setActiveRegularEugenias` | `/dpt/sara/setActiveRegularEugenias` | EuGenIA_Logo_Manager.js | EuGenIA API | Management |
 | `listarContagensSAs` | `/ai/teste/listarContagensSAs` | ListarContagensSAs.js | BigQuery | AI Query |
+| `listarContagensSAsPorLocalidade` | `/ai/greatops/listar_contagens_sa_por_localidade` | listarContagensSAsPorLocalidade.js | BigQuery | AI Query |
 | `getPortugueseDishes` | `/skills/getPortugueseDishes` | função_skills.js | Static | Demo/Test |

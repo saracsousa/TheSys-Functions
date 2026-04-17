@@ -1,139 +1,87 @@
 /*jslint node: true */
 "use strict";
 
-// ============================================================
-//  THESYS MODULE TEMPLATE
-//  Copy this file as a starting point for new TheSys functions.
-//  Replace all TODO_REPLACE markers with your values.
-// ============================================================
-
-// #### Useful global variables ####
-var objectSpace = "TODO_REPLACE";   // MUST replace: e.g. "sara", "nexus", "coolops"
+// #### Usefull global variables ####
+var objectSpace = "navigation";
 var debug = 1;
 var defaultLogLevel = "WARNING";
 // ##################################
 
-
 // #####################################################
-//  YOUR BUSINESS FUNCTION(S) GO HERE
+// This function retrieves the last day_part per
+// tecnologia from the navigation_logs_agg1d table
+// in BigQuery.
+//
+// Table: ops-dpt-lab-204386.indisponibilidades.navigation_logs_agg1d
+// Schema: day_part (DATE), tecnologia (STRING), count_chamadas (INTEGER)
+//
+// Input: none (no parameters needed)
+//
+// Returns: tecnologia, last_day_part, count_chamadas
 // #####################################################
-
-/**
- * Example function — replace with your logic.
- *
- * @param {Object} ticket  - TheSys execution context
- * @param {Object} params  - Indexed parameter list (params.get(0), etc.)
- */
-function myFunction(ticket, params) {
+function getNavigationLogsLastDay(ticket, params) {
   var result = { content: "", logs: "" };
-  var STEP = "INIT";
 
-  ticket.addOutput("[myFunction] START");
-  logInfo("myFunction", "Function called");
+  ticket.addOutput("getNavigationLogsLastDay: starting");
 
-  // --- 1. Parse input ---
-  STEP = "PARSE_INPUT";
-  ticket.addOutput("[myFunction] STEP: " + STEP);
-  var rawInput = "";
-  try {
-    if (params.length > 0 && params.get(0) !== null && params.get(0) !== undefined) {
-      rawInput = "" + params.get(0);
-    }
-  } catch (e) { rawInput = ""; }
+  var sql_query = 'SELECT tecnologia, day_part AS last_day_part, count_chamadas' +
+      ' FROM `ops-dpt-lab-204386.indisponibilidades.navigation_logs_agg1d` t' +
+      ' WHERE day_part = (' +
+      '   SELECT MAX(day_part)' +
+      '   FROM `ops-dpt-lab-204386.indisponibilidades.navigation_logs_agg1d`' +
+      '   WHERE tecnologia = t.tecnologia' +
+      ' )' +
+      ' ORDER BY tecnologia';
 
-  var parsedInput = null;
-  if (rawInput !== "") {
-    try {
-      var jsonObject = JSON.parse(rawInput);
-      if (jsonObject && Array.isArray(jsonObject) && jsonObject.length >= 1) {
-        parsedInput = jsonObject[0];
-      } else if (jsonObject && typeof jsonObject === "object" && !Array.isArray(jsonObject)) {
-        parsedInput = jsonObject;
-      } else {
-        parsedInput = jsonObject;
-      }
-    } catch (e) {
-      parsedInput = rawInput.trim();
-    }
-  }
+  ticket.addOutput("getNavigationLogsLastDay: sql_query=" + sql_query);
 
-  // Extract the filter value (adjust keys to your use case)
-  var filterValue = "";
-  if (parsedInput !== null && parsedInput !== undefined) {
-    if (typeof parsedInput === "object") {
-      filterValue = parsedInput.input || "";
-    } else {
-      filterValue = ("" + parsedInput).trim();
-    }
-  }
+  var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
 
-  ticket.addOutput("[myFunction] filterValue=" + filterValue);
-  logInfo("myFunction", "filterValue=" + filterValue);
-
-  // --- 2. Your logic here (BigQuery / TRIN / Elastic / etc.) ---
-  // IMPORTANT: When using subqueries in BigQuery, always add an alias: FROM (...) AS t
-  try {
-    STEP = "QUERY_DATA";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    logInfo("myFunction", "Executing BigQuery query");
-
-    // Example: BigQuery query
-    // var sql_query = 'SELECT * FROM `project.dataset.table` WHERE column = "' + filterValue + '" LIMIT 100';
-    // var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
-    // if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
-    //   result.logs = "ERROR: BigQuery query failed";
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs + " | SQL=" + sql_query);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // var data = JSON.parse(runTicketGCP.getResult().getObject());
-    // if (data.Result === undefined) {
-    //   result.logs = "ERROR: " + (data.Error || "unknown");
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // ticket.addOutput("[myFunction] rows=" + (data.Result ? data.Result.length : 0));
-    // result.content = data.Result;
-
-    // --- 3. Return result ---
-    STEP = "COMPOSE_RESPONSE";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    result.content = "Hello from myFunction!";
-    result.logs = "Executed successfully with filterValue=" + filterValue;
-
-    ticket.addOutput("[myFunction] SUCCESS: " + result.logs);
-    logInfo("myFunction", result.logs);
-    ticket.getResult().setObject(JSON.stringify(result));
-    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
-
-  } catch (err) {
-    result.logs = "EXCEPTION at STEP=" + STEP + ": " + err;
-    ticket.addOutput("[myFunction] " + result.logs);
-    logSevere("myFunction", result.logs);
+  if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
+    ticket.addOutput("getNavigationLogsLastDay: Query falhou");
+    result.logs = "ERROR: Query failed";
     ticket.getResult().setObject(JSON.stringify(result));
     ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    return;
   }
+
+  var data_runTicketGCP = JSON.parse(runTicketGCP.getResult().getObject());
+  ticket.addOutput("getNavigationLogsLastDay: raw GCP response=" + JSON.stringify(data_runTicketGCP).substring(0, 500));
+
+  if (data_runTicketGCP.Result === undefined) {
+    result.logs = "ERROR: " + data_runTicketGCP.Error;
+    ticket.addOutput("getNavigationLogsLastDay: " + result.logs);
+    ticket.getResult().setObject(JSON.stringify(result));
+    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    return;
+  }
+
+  result.content = data_runTicketGCP.Result;
+  result.logs = "Found " + data_runTicketGCP.Result.length + " record(s)";
+  ticket.addOutput("getNavigationLogsLastDay: " + result.logs);
+
+  var resultJson = JSON.stringify(result);
+  // Sanitize JSON: ensure decimal separators are dots (locale safety)
+  resultJson = resultJson.replace(/"(\d+),(\d+)"/g, '"$1.$2"');
+
+  ticket.addOutput("getNavigationLogsLastDay: result=" + resultJson.substring(0, 500));
+  ticket.getResult().setObject(resultJson);
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
 }
 
-
-// ####################### Start module ###########################
-// # Called every time module starts                              #
-// # When this file is saved, the module is stopped and started   #
-// ################################################################
+// ####################### Start module ############################
+// # Called every time module starts                               #
+// # When this file is saved, the module is stopped and started    #
+// #################################################################
 function startModule() {
   logInfo("startModule", "Starting ...");
 
   var functions = [
     {
-      name: "TODO_REPLACE",
-      path: "/ai/TODO_REPLACE/TODO_REPLACE",
-      parameters: "THESYS.ALLPARAMETERS.JSON*string",
-      description: "TODO_REPLACE @Authors:TODO_REPLACE@"
+     name: "getNavigationLogsLastDay",
+     path: "/ai/navigation/getNavigationLogsLastDay",
+     parameters: "THESYS.ALLPARAMETERS.JSON*string",
+     description: "Returns the last day_part per tecnologia from navigation_logs_agg1d @Authors:Sara@"
     }
   ];
 
@@ -141,20 +89,20 @@ function startModule() {
   removeFunctions(functions);
 
   logInfo("startModule", "Started.");
+
   logEvent(getRequestContext().getUser().getName(), "MODULE_STARTED", "");
 }
 
-
 // ####################### Stop module ############################
 // # Called every time module stops                               #
-// # When this file is saved, the module is stopped and started   #
+// # When this file is saved, thoe module is stopped and started  #
 // ################################################################
 function stopModule() {
   logInfo("stopModule", "Stopping ...");
   logInfo("stopModule", "Stopped.");
+
   logEvent(getRequestContext().getUser().getName(), "MODULE_STOPPED", "");
 }
-
 
 ///////////////////////////////////
 // Internal code - leave it asis //
@@ -396,92 +344,6 @@ function getRequestContext() {
 
 function getLogger() {
   return thesys_logger;
-}
-
-function getJavaClass(name) {
-  if (thesys_javaClassCache.hasOwnProperty(name)) {
-    return thesys_javaClassCache[name];
-  }
-
-  thesys_javaClassCache[name] = Java.type(name);
-
-  return thesys_javaClassCache[name];
-}
-
-var Util = null;
-var Level = null;
-var Exception = null;
-var Long = null;
-var Integer = null;
-var ArrayList = null;
-var TheSysController = null;
-var RequestContext = null;
-var ModuleUtils = null;
-var TheSysModuleFunctionResult = null;
-var FileInputStream = null;
-var BufferedReader = null;
-var FileReader = null;
-var PrintWriter = null;
-var File = null;
-var StringTokenizer = null;
-var SimpleDateFormat = null;
-var Transation = null;
-var HashMap = null;
-var GregorianCalendar = null;
-var Calendar = null;
-var Locale = null;
-var JavaDate = null;
-
-var thesys_moduleName = null;
-var thesys_moduleRequestContext = null;
-var thesys_logger = null;
-var thesys_initialized = false;
-var thesys_newBaseFormat = true;
-var thesys_javaClassCache = {};
-
-function initialize(moduleName, moduleRequestContext, wrapperModuleName) {
-  if (thesys_initialized) {
-    return;
-  }
-
-  if (wrapperModuleName) {
-    thesys_wrapperModuleName = wrapperModuleName;
-  }
-
-  thesys_moduleName = moduleName;
-  thesys_moduleRequestContext = moduleRequestContext;
-
-  Util = getJavaClass('com.zon.gopm.util.Util');
-  Level = getJavaClass('java.util.logging.Level');
-  Exception = getJavaClass('java.lang.Exception');
-  Long = getJavaClass('java.lang.Long');
-  Integer = getJavaClass('java.lang.Integer');
-  ArrayList = getJavaClass('java.util.ArrayList');
-  TheSysController = getJavaClass('com.nos.gopm.thesys.controller.TheSysController');
-  RequestContext = getJavaClass('com.nos.gopm.thesys.controller.RequestContext');
-  ModuleUtils = getJavaClass('com.nos.gopm.modules.ModuleUtils');
-  TheSysModuleFunctionResult = getJavaClass('com.nos.gopm.thesys.modules.TheSysModuleFunctionResult');
-  FileInputStream = getJavaClass('java.io.FileInputStream');
-  BufferedReader = getJavaClass('java.io.BufferedReader');
-  FileReader = getJavaClass('java.io.FileReader');
-  PrintWriter = getJavaClass('java.io.PrintWriter');
-  File = getJavaClass('java.io.File');
-  StringTokenizer = getJavaClass('java.util.StringTokenizer');
-  SimpleDateFormat = getJavaClass('java.text.SimpleDateFormat');
-  Transation = getJavaClass('com.nos.gopm.thesys.client.Transation');
-  HashMap = getJavaClass('java.util.HashMap');
-  GregorianCalendar = getJavaClass('java.util.GregorianCalendar');
-  Calendar = getJavaClass('java.util.Calendar');
-  Locale = getJavaClass('java.util.Locale');
-  JavaDate = getJavaClass('java.util.Date');
-
-  if (typeof defaultLogLevel === "undefined") {
-    thesys_logger = Util.getLogger(getModuleName(), "INFO");
-  } else {
-    thesys_logger = Util.getLogger(getModuleName(), defaultLogLevel);
-  }
-
-  thesys_initialized = true;
 }
 
 function getJavaClass(name) {

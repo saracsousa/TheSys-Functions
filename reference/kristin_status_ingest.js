@@ -1,163 +1,248 @@
 /*jslint node: true */
 "use strict";
 
-// ============================================================
-//  THESYS MODULE TEMPLATE
-//  Copy this file as a starting point for new TheSys functions.
-//  Replace all TODO_REPLACE markers with your values.
-// ============================================================
-
-// #### Useful global variables ####
-var objectSpace = "TODO_REPLACE";   // MUST replace: e.g. "sara", "nexus", "coolops"
+// #### Global variables ####
+var objectSpace = "helloworld";
 var debug = 1;
 var defaultLogLevel = "WARNING";
-// ##################################
+var gcpFullTable = "`ops-dpt-lab-204386.status_fixo.kristin_status_2h`";
+var elasticIndex = "auto_kristin_devices_status";
+var minutesInterval = 150; // 2h30m query window (covers 2h data cycle + 30min safety buffer to guarantee no data is missed)
+var batchSize = 150;       // number of rows per INSERT batch sent to BigQuery
+// ##########################
 
+function kristinStatusIngest(ticket, params) {
+  var startDate = new Date();
+  var endDate = new Date();
+  endDate.setSeconds(0);
+  startDate.setSeconds(0);
+  endDate.setMilliseconds(0);
+  startDate.setMilliseconds(0);
+  startDate.setMinutes(endDate.getMinutes() - minutesInterval);
 
-// #####################################################
-//  YOUR BUSINESS FUNCTION(S) GO HERE
-// #####################################################
+  ticket.addOutput("=== Kristin Status Ingest - Start ===");
+  ticket.addOutput("Time window: " + startDate.toISOString() + " to " + endDate.toISOString());
 
-/**
- * Example function — replace with your logic.
- *
- * @param {Object} ticket  - TheSys execution context
- * @param {Object} params  - Indexed parameter list (params.get(0), etc.)
- */
-function myFunction(ticket, params) {
-  var result = { content: "", logs: "" };
-  var STEP = "INIT";
-
-  ticket.addOutput("[myFunction] START");
-  logInfo("myFunction", "Function called");
-
-  // --- 1. Parse input ---
-  STEP = "PARSE_INPUT";
-  ticket.addOutput("[myFunction] STEP: " + STEP);
-  var rawInput = "";
-  try {
-    if (params.length > 0 && params.get(0) !== null && params.get(0) !== undefined) {
-      rawInput = "" + params.get(0);
-    }
-  } catch (e) { rawInput = ""; }
-
-  var parsedInput = null;
-  if (rawInput !== "") {
-    try {
-      var jsonObject = JSON.parse(rawInput);
-      if (jsonObject && Array.isArray(jsonObject) && jsonObject.length >= 1) {
-        parsedInput = jsonObject[0];
-      } else if (jsonObject && typeof jsonObject === "object" && !Array.isArray(jsonObject)) {
-        parsedInput = jsonObject;
-      } else {
-        parsedInput = jsonObject;
-      }
-    } catch (e) {
-      parsedInput = rawInput.trim();
-    }
-  }
-
-  // Extract the filter value (adjust keys to your use case)
-  var filterValue = "";
-  if (parsedInput !== null && parsedInput !== undefined) {
-    if (typeof parsedInput === "object") {
-      filterValue = parsedInput.input || "";
-    } else {
-      filterValue = ("" + parsedInput).trim();
-    }
-  }
-
-  ticket.addOutput("[myFunction] filterValue=" + filterValue);
-  logInfo("myFunction", "filterValue=" + filterValue);
-
-  // --- 2. Your logic here (BigQuery / TRIN / Elastic / etc.) ---
-  // IMPORTANT: When using subqueries in BigQuery, always add an alias: FROM (...) AS t
-  try {
-    STEP = "QUERY_DATA";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    logInfo("myFunction", "Executing BigQuery query");
-
-    // Example: BigQuery query
-    // var sql_query = 'SELECT * FROM `project.dataset.table` WHERE column = "' + filterValue + '" LIMIT 100';
-    // var runTicketGCP = ModuleUtils.runFunction("/bigquery/executeQuery", "MONIT", sql_query, getRequestContext());
-    // if (!ModuleUtils.waitForTicketsSuccess(runTicketGCP)) {
-    //   result.logs = "ERROR: BigQuery query failed";
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs + " | SQL=" + sql_query);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // var data = JSON.parse(runTicketGCP.getResult().getObject());
-    // if (data.Result === undefined) {
-    //   result.logs = "ERROR: " + (data.Error || "unknown");
-    //   ticket.addOutput("[myFunction] ERROR at STEP=" + STEP + ": " + result.logs);
-    //   logWarning("myFunction", result.logs);
-    //   ticket.getResult().setObject(JSON.stringify(result));
-    //   ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
-    //   return;
-    // }
-    // ticket.addOutput("[myFunction] rows=" + (data.Result ? data.Result.length : 0));
-    // result.content = data.Result;
-
-    // --- 3. Return result ---
-    STEP = "COMPOSE_RESPONSE";
-    ticket.addOutput("[myFunction] STEP: " + STEP);
-    result.content = "Hello from myFunction!";
-    result.logs = "Executed successfully with filterValue=" + filterValue;
-
-    ticket.addOutput("[myFunction] SUCCESS: " + result.logs);
-    logInfo("myFunction", result.logs);
-    ticket.getResult().setObject(JSON.stringify(result));
+  var queryResultJson = queryElasticKristin(ticket, startDate, endDate);
+  if (queryResultJson === null) {
+    ticket.addOutput("Elastic error after retries. Exiting...");
     ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
-
-  } catch (err) {
-    result.logs = "EXCEPTION at STEP=" + STEP + ": " + err;
-    ticket.addOutput("[myFunction] " + result.logs);
-    logSevere("myFunction", result.logs);
-    ticket.getResult().setObject(JSON.stringify(result));
-    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_NOK);
+    return;
   }
+
+  var hits = queryResultJson.hits.hits;
+  ticket.addOutput("Total hits from Elastic: " + hits.length + " (total in index: " + (queryResultJson.hits.total && queryResultJson.hits.total.value ? queryResultJson.hits.total.value : queryResultJson.hits.total) + ")");
+
+  if (hits.length >= 10000) {
+    ticket.addOutput("WARNING: Hit the 10000 document limit. Some records may be missing. Consider reducing the interval or implementing pagination.");
+  }
+
+  if (hits.length === 0) {
+    ticket.addOutput("No records found in this window. Nothing to insert.");
+    ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+    return;
+  }
+
+  var records = parseElasticData(ticket, hits);
+  ticket.addOutput("Parsed records: " + records.length);
+
+  deleteOverlappingRecords(ticket, startDate, endDate);
+
+  insertArrayInGCP(ticket, records);
+
+  ticket.addOutput("=== Kristin Status Ingest - Complete ===");
+  ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+}
+
+function deleteOverlappingRecords(ticket, startDate, endDate) {
+  var startDateText = startDate.toISOString();
+  var endDateText = endDate.toISOString();
+
+  var deleteQuery = "DELETE FROM " + gcpFullTable +
+    " WHERE event_timestamp >= '" + startDateText + "'" +
+    " AND event_timestamp <= '" + endDateText + "'";
+
+  if (debug === 1) ticket.addOutput("DELETE query: " + deleteQuery);
+
+  var runTicket = ModuleUtils.runFunction("/bigquery/executeQuery", ticket.getTheSysUser(), "MONIT", deleteQuery);
+  if (!ModuleUtils.waitForTicketsSuccess(runTicket)) {
+    ticket.addOutput("WARNING: Could not delete overlapping records. Proceeding with insert (may cause duplicates).");
+  } else {
+    ticket.addOutput("Overlapping records deleted successfully.");
+  }
+}
+
+function insertArrayInGCP(ticket, records) {
+  var columns = "(ingest_timestamp, event_timestamp, concelho, device_mac, device_model, distrito, " +
+    "olt_node_name, ont_mac, ont_model, plc_netname, rede_ftth, service_account, " +
+    "splitter1_netname, splitter2_netname, state)";
+
+  var queryValuesString = "";
+  var queryString = "";
+  var batchCount = 0;
+
+  if (debug === 1) ticket.addOutput("Inserting " + records.length + " records into GCP...");
+
+  for (var i = 0; i < records.length; i++) {
+    var r = records[i];
+    var valueRow = "(\"" + r.ingest_timestamp + "\", \"" + r.event_timestamp + "\", \"" +
+      sanitize(r.concelho) + "\", \"" + sanitize(r.device_mac) + "\", \"" + sanitize(r.device_model) + "\", \"" +
+      sanitize(r.distrito) + "\", \"" + sanitize(r.olt_node_name) + "\", \"" + sanitize(r.ont_mac) + "\", \"" +
+      sanitize(r.ont_model) + "\", \"" + sanitize(r.plc_netname) + "\", \"" + sanitize(r.rede_ftth) + "\", \"" +
+      sanitize(r.service_account) + "\", \"" + sanitize(r.splitter1_netname) + "\", \"" +
+      sanitize(r.splitter2_netname) + "\", \"" + sanitize(r.state) + "\")";
+
+    if (queryValuesString === "") {
+      queryValuesString = valueRow;
+    } else {
+      queryValuesString += ",\n" + valueRow;
+    }
+
+    if ((i > 0 && ((i + 1) % batchSize) === 0) || i === records.length - 1) {
+      queryString = "INSERT INTO " + gcpFullTable + " " + columns + " VALUES " + queryValuesString;
+      queryValuesString = "";
+      batchCount++;
+
+      if (debug === 1) ticket.addOutput("Executing INSERT batch #" + batchCount + " (up to record " + (i + 1) + "/" + records.length + ")");
+
+      var runTicket = ModuleUtils.runFunction("/bigquery/executeQuery", ticket.getTheSysUser(), "MONIT", queryString);
+      if (!ModuleUtils.waitForTicketsSuccess(runTicket)) {
+        throw "Could not insert data in GCP at batch #" + batchCount + " (record index " + i + ")";
+      }
+    }
+  }
+
+  ticket.addOutput("Successfully inserted " + records.length + " records in " + batchCount + " batch(es).");
+}
+
+function parseElasticData(ticket, hits) {
+  var records = [];
+  var dateNow = new Date();
+  var ingestTimestamp = dateNow.toISOString();
+
+  for (var i = 0; i < hits.length; i++) {
+    var source = hits[i]._source;
+
+    var eventTs = source.event_timestamp || "";
+    if (typeof eventTs === "number") {
+      eventTs = new Date(eventTs).toISOString();
+    }
+
+    var record = {
+      ingest_timestamp:  ingestTimestamp,
+      event_timestamp:   eventTs,
+      concelho:          source.concelho || "",
+      device_mac:        source.device_mac || "",
+      device_model:      source.device_model || "",
+      distrito:          source.distrito || "",
+      olt_node_name:     source.olt_node_name || "",
+      ont_mac:           source.ont_mac || "",
+      ont_model:         source.ont_model || "",
+      plc_netname:       source.plc_netname || "",
+      rede_ftth:         source.rede_ftth || "",
+      service_account:   source.service_account || "",
+      splitter1_netname: source.splitter1_netname || "",
+      splitter2_netname: source.splitter2_netname || "",
+      state:             source.state || ""
+    };
+
+    records.push(record);
+  }
+
+  if (debug === 1) ticket.addOutput("Parsed " + records.length + " records from " + hits.length + " hits.");
+  return records;
+}
+
+function queryElasticKristin(ticket, startDate, endDate) {
+  var attemptsNumberForNOK = 3;
+  var nokCount = 0;
+  var retrySecondsBetweenQueries = 45;
+
+  var startDateText = "" + startDate.getUTCFullYear() + "-" + padNumber((startDate.getUTCMonth() + 1), 2) + "-" + padNumber(startDate.getUTCDate(), 2) + "T" + padNumber(startDate.getUTCHours(), 2) + ":" + padNumber(startDate.getUTCMinutes(), 2) + ":" + padNumber(startDate.getUTCSeconds(), 2) + ".000Z";
+  var endDateText = "" + endDate.getUTCFullYear() + "-" + padNumber((endDate.getUTCMonth() + 1), 2) + "-" + padNumber(endDate.getUTCDate(), 2) + "T" + padNumber(endDate.getUTCHours(), 2) + ":" + padNumber(endDate.getUTCMinutes(), 2) + ":" + padNumber(endDate.getUTCSeconds(), 2) + ".000Z";
+
+  var elasticArgument = "{" +
+    "\"size\": 10000," +
+    "\"sort\": [{\"event_timestamp\":{\"order\": \"asc\"}}]," +
+    "\"query\":{\"bool\": {\"must\": [" +
+      "{\"range\": {\"event_timestamp\": {" +
+        "\"gte\": \"" + startDateText + "\"," +
+        "\"lte\": \"" + endDateText + "\"," +
+        "\"format\": \"strict_date_optional_time\"" +
+      "}}}" +
+    "],\"filter\": [],\"should\": [],\"must_not\": []}}" +
+  "}";
+
+  ticket.addOutput("Elastic query window: " + startDateText + " -> " + endDateText);
+  if (debug === 1) ticket.addOutput("Elastic query body: " + elasticArgument);
+
+  var runTicket = ModuleUtils.runFunction("/elasticNA/queryWithBody", ticket.getTheSysUser(), elasticIndex, elasticArgument);
+
+  for (var i = 0; i < attemptsNumberForNOK; i++) {
+    if (!ModuleUtils.waitForTicketsSuccess(runTicket)) {
+      nokCount++;
+      ticket.addOutput("Elastic query attempt " + nokCount + " failed.");
+      if (nokCount === attemptsNumberForNOK) {
+        return null;
+      }
+      ModuleUtils.executeFunction("/thesys/sleep", getRequestContext(), retrySecondsBetweenQueries * 1000);
+      runTicket = ModuleUtils.runFunction("/elasticNA/queryWithBody", ticket.getTheSysUser(), elasticIndex, elasticArgument);
+    } else {
+      var jsonObj = runTicket.getResult().getObject();
+      if (debug === 1) ticket.addOutput("Elastic raw response: " + jsonObj);
+      var json = JSON.parse(jsonObj);
+      if (!json || !json.hits || !json.hits.hits) {
+        ticket.addOutput("ERROR: Elastic response has no hits. Possible access/permissions issue. Response: " + JSON.stringify(json).substring(0, 500));
+        return null;
+      }
+      return json;
+    }
+  }
+
+  return null;
+}
+
+function sanitize(val) {
+  if (val === null || val === undefined) return "";
+  return String(val).replace(/"/g, '\\"');
+}
+
+function padNumber(num, size) {
+  num = num.toString();
+  while (num.length < size) num = "0" + num;
+  return num;
 }
 
 
 // ####################### Start module ###########################
-// # Called every time module starts                              #
-// # When this file is saved, the module is stopped and started   #
-// ################################################################
 function startModule() {
   logInfo("startModule", "Starting ...");
 
   var functions = [
     {
-      name: "TODO_REPLACE",
-      path: "/ai/TODO_REPLACE/TODO_REPLACE",
-      parameters: "THESYS.ALLPARAMETERS.JSON*string",
-      description: "TODO_REPLACE @Authors:TODO_REPLACE@"
+      name: "kristinStatusIngest",
+      path: "/dpt/kristinStatusIngest",
+      parameters: "",
+      description: "Ingests device status data from Elastic index auto_kristin_devices_status into GCP BigQuery. Schedule every 2 hours.@Authors:TheSys@"
     }
   ];
 
-  addFunctions(functions, true);
+  addFunctions(functions);
   removeFunctions(functions);
 
   logInfo("startModule", "Started.");
   logEvent(getRequestContext().getUser().getName(), "MODULE_STARTED", "");
 }
 
-
 // ####################### Stop module ############################
-// # Called every time module stops                               #
-// # When this file is saved, the module is stopped and started   #
-// ################################################################
 function stopModule() {
   logInfo("stopModule", "Stopping ...");
   logInfo("stopModule", "Stopped.");
   logEvent(getRequestContext().getUser().getName(), "MODULE_STOPPED", "");
 }
 
-
 ///////////////////////////////////
-// Internal code - leave it asis //
+// Internal code - leave it as is //
 ///////////////////////////////////
 
 function setupDataStoreHints(hints, requestedTries) {
@@ -232,8 +317,6 @@ function addFunctions(functions, forceCreation) {
         remoteExecution = func.remoteExecution === "no" ? "no" : "yes";
       }
 
-      logInfo("", "/wrapper" + wrapperModulePathId + "/addcommandv1 \"" + func.path + "\"  \"" + func.parameters + "\"  \"" + func.description + "\"  \"EMBEB_SCRIPT_JS\"  \"" + func.name + "|<SCRIPTS.DIR>/" + getModuleName() + ".js\" \"no\" \"yes\" \"yes\" \"" + remoteExecution + "\"");
-
       runTicket = ModuleUtils.runFunction("/wrapper" + wrapperModulePathId + "/addcommandv1", getRequestContext(), func.path, func.parameters, func.description, "EMBEB_SCRIPT_JS", func.name + "|<SCRIPTS.DIR>/" + getModuleName() + ".js", "no", "yes", "yes", remoteExecution);
       if (!ModuleUtils.waitForTicketsSuccess(runTicket)) {
         throw "[" + getModuleName() + ".addFunction] Failed do start module: Could not create command!";
@@ -267,7 +350,6 @@ function removeFunctions(functions) {
 
   for (var idx in functions) {
     var func = functions[idx];
-    logInfo("removeFunctions", "Func: " + JSON.stringify(func));
     if (!func.hasOwnProperty("remove") || func.remove !== "true") {
       continue;
     }
@@ -380,12 +462,6 @@ function logSevere(area, message) {
   thesys_logger.log(Level.SEVERE, "[" + getModuleName() + "][" + area + "] " + message);
 }
 
-function helpDocument(f) {
-  return f.toString().
-          replace(/^[^\/]+\/\*!?/, '').
-          replace(/\*\/[^\/]+$/, '');
-}
-
 function getModuleName() {
   return thesys_moduleName;
 }
@@ -396,92 +472,6 @@ function getRequestContext() {
 
 function getLogger() {
   return thesys_logger;
-}
-
-function getJavaClass(name) {
-  if (thesys_javaClassCache.hasOwnProperty(name)) {
-    return thesys_javaClassCache[name];
-  }
-
-  thesys_javaClassCache[name] = Java.type(name);
-
-  return thesys_javaClassCache[name];
-}
-
-var Util = null;
-var Level = null;
-var Exception = null;
-var Long = null;
-var Integer = null;
-var ArrayList = null;
-var TheSysController = null;
-var RequestContext = null;
-var ModuleUtils = null;
-var TheSysModuleFunctionResult = null;
-var FileInputStream = null;
-var BufferedReader = null;
-var FileReader = null;
-var PrintWriter = null;
-var File = null;
-var StringTokenizer = null;
-var SimpleDateFormat = null;
-var Transation = null;
-var HashMap = null;
-var GregorianCalendar = null;
-var Calendar = null;
-var Locale = null;
-var JavaDate = null;
-
-var thesys_moduleName = null;
-var thesys_moduleRequestContext = null;
-var thesys_logger = null;
-var thesys_initialized = false;
-var thesys_newBaseFormat = true;
-var thesys_javaClassCache = {};
-
-function initialize(moduleName, moduleRequestContext, wrapperModuleName) {
-  if (thesys_initialized) {
-    return;
-  }
-
-  if (wrapperModuleName) {
-    thesys_wrapperModuleName = wrapperModuleName;
-  }
-
-  thesys_moduleName = moduleName;
-  thesys_moduleRequestContext = moduleRequestContext;
-
-  Util = getJavaClass('com.zon.gopm.util.Util');
-  Level = getJavaClass('java.util.logging.Level');
-  Exception = getJavaClass('java.lang.Exception');
-  Long = getJavaClass('java.lang.Long');
-  Integer = getJavaClass('java.lang.Integer');
-  ArrayList = getJavaClass('java.util.ArrayList');
-  TheSysController = getJavaClass('com.nos.gopm.thesys.controller.TheSysController');
-  RequestContext = getJavaClass('com.nos.gopm.thesys.controller.RequestContext');
-  ModuleUtils = getJavaClass('com.nos.gopm.modules.ModuleUtils');
-  TheSysModuleFunctionResult = getJavaClass('com.nos.gopm.thesys.modules.TheSysModuleFunctionResult');
-  FileInputStream = getJavaClass('java.io.FileInputStream');
-  BufferedReader = getJavaClass('java.io.BufferedReader');
-  FileReader = getJavaClass('java.io.FileReader');
-  PrintWriter = getJavaClass('java.io.PrintWriter');
-  File = getJavaClass('java.io.File');
-  StringTokenizer = getJavaClass('java.util.StringTokenizer');
-  SimpleDateFormat = getJavaClass('java.text.SimpleDateFormat');
-  Transation = getJavaClass('com.nos.gopm.thesys.client.Transation');
-  HashMap = getJavaClass('java.util.HashMap');
-  GregorianCalendar = getJavaClass('java.util.GregorianCalendar');
-  Calendar = getJavaClass('java.util.Calendar');
-  Locale = getJavaClass('java.util.Locale');
-  JavaDate = getJavaClass('java.util.Date');
-
-  if (typeof defaultLogLevel === "undefined") {
-    thesys_logger = Util.getLogger(getModuleName(), "INFO");
-  } else {
-    thesys_logger = Util.getLogger(getModuleName(), defaultLogLevel);
-  }
-
-  thesys_initialized = true;
 }
 
 function getJavaClass(name) {
