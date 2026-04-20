@@ -325,6 +325,16 @@ These functions build SQL queries and execute them against Google BigQuery via `
 - **Partition filter:** `day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)` — applied inside each SELECT of the UNION
 - **Returns:** `[{distrito, concelho, freguesia, SAs}]`
 
+#### `navigationLogsUltimoDayPartPorTecnologia` — Last Day Part per Technology
+- **File:** `navigationLogsUltimoDayPartPorTecnologia.js`
+- **Path:** `/ai/greatops/navigation_logs_ultimo_day_part_por_tecnologia`
+- **Parameters:** `THESYS.ALLPARAMETERS.JSON*string`
+- **Input:** None required
+- **What it does:** Returns the most recent `day_part` and its `count_chamadas` for each `tecnologia` in the navigation logs aggregation table. Uses `ROW_NUMBER() OVER (PARTITION BY tecnologia ORDER BY day_part DESC)` to get the latest row per technology, filtered to the last 30 days.
+- **BigQuery table:** `ops-dpt-lab-204386.indisponibilidades.navigation_logs_agg1d`
+- **Partition filter:** `day_part >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)` (inside subquery)
+- **Returns:** `[{tecnologia, ultimo_day_part, count_chamadas}]`
+
 ---
 
 ### 2.2 TRIN / MAC (Activities API) — Functions That Query the Activities Platform
@@ -657,6 +667,42 @@ The `objectSpace` variable should be **inferred automatically** by the agent fro
 If the path does not match any known prefix, use the second segment of the path (e.g., `/ai/myapp/fn` → `"myapp"`).
 If the user explicitly provides an objectSpace, use that instead.
 
+### 3.12 Result Data Visibility — MANDATORY `addOutput` Rule
+
+`ticket.getResult().setObject(JSON.stringify(result))` stores the result **programmatically** (for machine callers) but does **NOT** display it visibly in the TheSys console. The agent will appear to return "nothing" even when it returns 6+ rows.
+
+**You MUST also call `ticket.addOutput(JSON.stringify(result))` to make the data visible:**
+
+```javascript
+// CORRECT — data is both stored and visible
+result.content = data.Result;
+result.logs = "rows=" + (data.Result ? data.Result.length : 0);
+
+ticket.addOutput("[myFunction] SUCCESS: " + result.logs);
+ticket.addOutput(JSON.stringify(result));          // <-- MANDATORY for visibility
+ticket.getResult().setObject(JSON.stringify(result));
+ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+```
+
+```javascript
+// WRONG — data stored but invisible to user
+result.content = data.Result;
+ticket.getResult().setObject(JSON.stringify(result));
+ticket.getResult().setResult(TheSysModuleFunctionResult.RESULT_OK);
+// No addOutput(JSON.stringify(result)) → user sees only log lines, not the data
+```
+
+Also avoid double-prefixing the `logs` string:
+```javascript
+// WRONG:
+result.logs = "SUCCESS: rows=6";                          // already has "SUCCESS:"
+ticket.addOutput("[fn] SUCCESS: " + result.logs);         // → "SUCCESS: SUCCESS: rows=6"
+
+// CORRECT:
+result.logs = "rows=6";
+ticket.addOutput("[fn] SUCCESS: " + result.logs);         // → "SUCCESS: rows=6"
+```
+
 ---
 
 ## 4. Quick Reference: All Registered Functions
@@ -682,4 +728,5 @@ If the user explicitly provides an objectSpace, use that instead.
 | `setActiveRegularEugenias` | `/dpt/sara/setActiveRegularEugenias` | EuGenIA_Logo_Manager.js | EuGenIA API | Management |
 | `listarContagensSAs` | `/ai/teste/listarContagensSAs` | ListarContagensSAs.js | BigQuery | AI Query |
 | `listarContagensSAsPorLocalidade` | `/ai/greatops/listar_contagens_sa_por_localidade` | listarContagensSAsPorLocalidade.js | BigQuery | AI Query |
+| `navigationLogsUltimoDayPartPorTecnologia` | `/ai/greatops/navigation_logs_ultimo_day_part_por_tecnologia` | navigationLogsUltimoDayPartPorTecnologia.js | BigQuery | AI Query |
 | `getPortugueseDishes` | `/skills/getPortugueseDishes` | função_skills.js | Static | Demo/Test |
