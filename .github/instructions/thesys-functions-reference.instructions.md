@@ -428,6 +428,174 @@ These functions query Elasticsearch indices and push data into BigQuery. They ar
 
 ---
 
+### 2.6 MasterDB — CI Management & AI Tools (`masterdb-agent-tools.js`)
+
+These functions query and manage Configuration Items (CIs) in the MasterDB platform via `/masterdb/ci/search`, `/masterdb/ci/find`, `/masterdb/ci/update`, and related endpoints. All share the pattern `params*string` (single JSON argument). All are in `reference/masterdb-agent-tools.js`.
+
+#### `aiToolsMasterDBFind` — Generic CI Search with Full Fallback
+- **Path:** `/ai/tools/masterdb/find`
+- **Input:** JSON with any CI attribute filter plus optional control fields (`limit`, `sort_field`, `sort_order`, `return_fields`, `items`, `status`).
+- **What it does:** Searches CIs with a 3-phase fallback: (1) exact query, (2) case variations on attribute values, (3) alternative attribute names (e.g. `manufacturer` → `vendor`). If 0 results after fallback, suggests similar values via distinct+like queries. Supports `items` as AND string or array. Strips `fields.` prefix from attribute names. Default `status=Deployed`; use `status=ALL` to disable.
+- **Returns:** `{ content: { results, total, query_used, fallback_applied, suggestions }, logs }`
+
+#### `aiToolsMasterDBFindEnergyInfra` — Energy Infrastructure CI Search
+- **Path:** `/ai/tools/masterdb/find/EnergyInfra`
+- **Input:** JSON with any CI attributes (dynamically inferred as filters). Optional `status` (default `Deployed`).
+- **What it does:** Searches energy-infrastructure CIs. Builds the filter query dynamically from all provided JSON keys (excluding `limit`, `sort_*`, `return_fields`). Intended for UPS, PDU, and related energy infrastructure equipment.
+- **Returns:** `{ content, logs }`
+
+#### `aiToolsMasterDBFindEnergyGenerator` — Energy Generator CI Search
+- **Path:** `/ai/tools/masterdb/find/EnergyGenerator`
+- **Input:** JSON with any CI attribute filters.
+- **What it does:** Searches generator CIs in MasterDB. Same dynamic filter logic as `FindEnergyInfra`.
+- **Returns:** `{ content, logs }`
+
+#### `aiToolsMasterDBFindEnergySupplier` — Energy Supplier CI Search
+- **Path:** `/ai/tools/masterdb/find/EnergySupplier`
+- **Input:** JSON with any CI attribute filters.
+- **What it does:** Searches energy supplier CIs (electricity providers, connections) in MasterDB.
+- **Returns:** `{ content, logs }`
+
+#### `aiToolsMasterDBFindSupport` — Support / Energy Autonomy CI Search
+- **Paths:** `/ai/tools/masterdb/find/Support` AND `/ai/tools/masterdb/find/EnergyAutonomy` (same function, registered twice)
+- **Input:** JSON with any CI attribute filters.
+- **What it does:** Searches support and energy autonomy CIs (batteries, autonomy records). Same dynamic filter pattern.
+- **Returns:** `{ content, logs }`
+
+#### `aiToolsMasterDBGeoSearch` — Geographic CI Search
+- **Path:** `/ai/tools/masterdb/GEOSearch`
+- **Input:** JSON with any combination of: `latitude`+`longitude`, `district`, `concelho`/`municipality`, `trigram`, `ci_classification`, `ci_name`, `site_type`, `address`, `postal_code`, `radius_meters`, `status`, `limit`, `return_fields`.
+- **What it does:** Resolves CIs by geographic criteria. For `TECHNICAL_ROOM`: multi-strategy search via address fields, coords (rounded by precision derived from radius), or site trigram. For other CIs: resolves by coords → concelho trigram → direct trigram → district trigramlist → ci_name lookup with site/TR coordinates fallback. Deduplicates by `ci_name`.
+- **Returns:** `{ content: { results, strategy, count }, logs }`
+
+#### `aiToolsMasterDBTemplateAttributesGet` — Template Attribute Schema
+- **Path:** `/ai/tools/masterdb/find/TemplateAttributes`
+- **Input:** JSON with `ci_classification` (required) and optional filters.
+- **What it does:** Retrieves the attribute schema (field names, types, required flags) for a given CI classification template from MasterDB.
+- **Returns:** `{ content: { attributes: [...] }, logs }`
+
+#### `aiToolsMasterDBClassificationsGet` — List All CI Classifications
+- **Path:** `/ai/tools/masterdb/find/Classifications`
+- **Input:** Optional JSON (currently unused; params logged only).
+- **What it does:** Calls `/masterdb/ci/classifications` to retrieve the full list of available CI classification types.
+- **Returns:** `{ content: { classifications: [...] }, logs }`
+
+#### `aiToolsMasterDBDependencySearch` — CI Dependency Graph Search
+- **Path:** `/ai/tools/masterdb/find/DependencySearch`
+- **Input:** JSON with `ci_name` or `ip`/`ip_address`, optional `classifications` (pipe or comma-separated), `depth`, `direction` (`L2R`/`R2L`/`BOTH`), `limit`, `status`.
+- **What it does:** Traverses the MasterDB dependency graph from a given CI. Supports multi-classification filtering. Extracts IP addresses from `network.addresses`. Returns dependency tree with CI details.
+- **Returns:** `{ content: { source_ci, dependencies: [...], total }, logs }`
+
+#### `aiToolsMasterDBImpact` — CI Impact Analysis
+- **Path:** `/ai/tools/masterdb/find/Impact`
+- **Input:** JSON with `ci_name` (or `ci_names` array), optional `ci_classification`, `depth` (default 3), `direction` (default `L2R`), `by` (`name`/`id`), `status`.
+- **What it does:** Performs impact analysis by traversing dependencies from a given CI. Identifies which CIs would be affected (downstream) or what a CI depends on (upstream). Returns impact tree and summary.
+- **Returns:** `{ content: { source, impact_tree, affected_count }, logs }`
+
+#### `aiToolsMasterDBExportEmailCSV` — Export CI Search Results as CSV via Email
+- **Path:** `/ai/tools/masterdb/export/EmailCsv`
+- **Input:** JSON with `filters` (search criteria), `return_fields`, `email` (recipient), `subject`, optional `limit` and `filename`.
+- **What it does:** Executes a paginated CI search (all pages up to limit), converts results to CSV, saves to local storage, and sends via email. Validates email format. Uses `getValueFromPath` to flatten nested fields.
+- **Returns:** `{ content: { sent, recipient, rows_exported, filename }, logs }`
+
+#### `aiToolsMasterDBNetworkIPGet` — CI Network & IP Information
+- **Path:** `/ai/tools/masterdb/find/NetworkIPGet`
+- **Input:** JSON with `ci_name` or IP filter criteria, optional `return_fields`, `limit`, `status`.
+- **What it does:** Retrieves network and IP address information for CIs. Extracts `network.addresses`, identifies SSH-capable addresses (checks `properties` array), and returns structured IP data.
+- **Returns:** `{ content: { results: [{ci_name, addresses, ssh_ips}], total }, logs }`
+
+#### `aiToolsMasterDBFindAttributeValues` — Distinct Attribute Values Discovery
+- **Path:** `/ai/tools/masterdb/find/AttributeValues`
+- **Input:** JSON with `attribute` (required), optional `ci_classification`, `value_filter` (like), `status`, `limit`.
+- **What it does:** Queries MasterDB to find all distinct values for a given CI attribute. Removes diacritics for normalization. Useful for building filter dropdowns or discovering valid enum values.
+- **Returns:** `{ content: { attribute, distinct_values: [...], count }, logs }`
+
+#### `aiToolsMasterDBCockpitFindData` — Monitoring Cockpit Data Retrieval
+- **Path:** `/ai/tools/masterdb/find/CockpitData`
+- **Input:** JSON with `object` (required, e.g. `masterdb.ftth.topologyAnalysis`), optional `space` (default `dummy`), `row`, `column`, `period` (default `86400`), `backoff` (default `86400`).
+- **What it does:** Calls `/mon/dataserver/finddata` to retrieve pre-computed cockpit metrics/aggregations from the TheSys monitoring dataserver. Used to fetch topology analysis, compliance summaries, backup stats, etc.
+- **Returns:** `{ content: { data, object, row, column }, logs }`
+
+#### `aiToolsMasterDBUpdate` — Update CI Attributes
+- **Path:** `/ai/tools/masterdb/update`
+- **Input:** JSON with `ci_name` (required), `ci_classification` (required), `attributes` (object with key-value pairs to update), optional `dry_run` (default `true`).
+- **What it does:** Updates CI attributes in MasterDB. Enforces a security blacklist (`_id`, `ci_name`, `ci_classification`, audit fields — cannot be modified). Supports nested attribute paths (dot notation). Retries up to 3 times on failure. Fetches current CI state before update for audit trail.
+- **Returns:** `{ content: { ci_name, updated_attributes, dry_run, previous_values }, logs }`
+
+#### `aiToolsMasterDBFindTransformations` — List & Filter Transformation Rules
+- **Path:** `/ai/tools/masterdb/find/Transformations`
+- **Input:** Optional JSON with `filter_field`, `filter_value`, `output_field`, `output_value`, `limit` (default `100`), `show_stats` (default `true`).
+- **What it does:** Retrieves transformation rules from `/masterdb/admin/transform/list`. Supports filtering by input/output field and value. Returns stats (total, by type) and matched transformations.
+- **Returns:** `{ content: { total, stats, transformations: [...] }, logs }`
+
+#### `aiToolsMasterDBTransformAdd` — Add / Update Transformation Rules
+- **Path:** `/ai/tools/masterdb/update/Transformations`
+- **Input:** JSON with transformation rule fields: `input_field`, `input_value`, `output_field`, `output_value`, `type`, optional `description`, `dry_run` (default `true`).
+- **What it does:** Creates or updates a MasterDB transformation rule via `/masterdb/admin/transform/add`. Supports query-string format in addition to JSON. Uses similarity threshold (`0.7`) to detect near-duplicate rules before adding. Retries on failure.
+- **Returns:** `{ content: { action, rule, similar_rules }, logs }`
+
+#### `aiToolsMasterDBComplianceSearch` — CI Compliance Status Analysis
+- **Path:** `/ai/tools/masterdb/find/Compliances`
+- **Input:** JSON with optional `ci_classification`, `compliance_check` (e.g. `tenable`, `antivirus`), `compliance_state` (0–4 or string), `os`, `mode` (`summary`/`list`/`count`), `limit`, `status`.
+- **What it does:** Analyses the `compliances` attribute of CIs. States: 0=UNDEFINED, 1=IMPLEMENTED, 2=NOT_IMPLEMENTED, 3=IGNORED, 4=IMPLEMENTATION. Returns aggregated summary by classification+check+state, or CI list in `list` mode.
+- **Returns:** `{ content: { mode, total_cis_with_compliances, compliance_summary, classifications_with_compliances, items (list mode), count (count mode) }, logs }`
+
+#### `aiToolsMasterDBFindLocationGeoInfo` — Resolve Geo Info from Location Value
+- **Path:** `/ai/tools/masterdb/find/LocationGeoInfo`
+- **Input:** JSON with `location` (required, e.g. `POVOASANTOADRIAOMSC`).
+- **What it does:** 3-step resolution: (1) Find CIs with `location=~eq~<value>`, extract a `site` with valid format (2–5 letters + digit, e.g. `OEI32`, `ODV2-1`). (2) Extract site prefix (part before first `-`). (3) Search `TECHNICAL_ROOM` with `ci_name=~like~<prefix>-` and extract `location_details.address`. Groups by distinct address.
+- **Returns:** `{ content: { location, site_raw, site_prefix, technical_rooms: [{ci_names, country, concelho, district, address, coordinates}] }, logs }`
+
+#### `aiToolsMasterDBGetODFChain` — FTTH ODF Chain Traversal
+- **Path:** `/ai/tools/masterdb/ftth/GetODFChain`
+- **Input:** JSON with `ci_name` (required), optional `ci_classification`, `depth` (default `4`), `status`.
+- **What it does:** Navigates the FTTH ODF_CHAIN dependency from any CI (PLC, ONT, SPLITTER, ODF). Auto-detects entry type: Case A (CI is ODF → SPMs + N3s), Case B (CI has ODF_CHAIN R2L with ODFs → fetch each ODF + SPMs), Case C (no ODF_CHAIN → DEFAULT R2L search for N3s → apply Case B). All port parameters (`port_out`, `odf_in_port`, `odf_out_port`) are fetched via `ci/find?_relations=true`.
+- **Returns:** `{ content: { source_ci_name, source_ci_classification, odf_count, odf_connections: [{odf_ci_name, spm_connections, n3_connections}] }, logs }`
+
+#### `aiToolsMasterDBRiskUpsert` — Create / Update CI Risk Dimensions
+- **Path:** `/ai/tools/masterdb/risk/upsert`
+- **Input:** JSON with `ci_name` (required), `ci_classification` (required), `operational` and/or `structural` (objects with dimension grades), optional `note`, `dry_run` (default `true`), `updated_by`.
+- **What it does:** Creates or updates risk dimensions on a `TECHNICAL_ROOM` CI using ARO v1.2 formula. Partial updates preserve existing dimensions. Auto-computes `operational.global` (mean of sub-group means), `structural.global` (MAX-tier), and `risk.global`. Appends to `risk.notes[]` if note provided.
+- **Returns:** `{ content: { ci_name, dry_run, risk_before, risk_after, globals_computed }, logs }`
+
+#### `aiToolsMasterDBRiskDeleteDimension` — Remove a Risk Dimension
+- **Path:** `/ai/tools/masterdb/risk/delete`
+- **Input:** JSON with `ci_name`, `ci_classification`, `dimension_type` (`operational`/`structural`), `dimension_name`, optional `note`, `dry_run` (default `true`).
+- **What it does:** Removes a specific risk dimension from a `TECHNICAL_ROOM` CI and recomputes globals. Automatically appends a deletion note to `risk.notes[]`. Does NOT delete the entire `risk` attribute.
+- **Returns:** `{ content: { ci_name, dimension_removed, risk_after }, logs }`
+
+#### `aiToolsMasterDBRiskBulkLoad` — Bulk Load Risk Assessments (ARO CSV)
+- **Path:** `/pc/masterdb/risk/bulk/load`
+- **Input:** JSON with `mode` (`dry_run`/`execute`/`rollback`), `assessment_version`, `note_prefix`, `records` array (`[{ci_name, operational, structural, note}]`), or `rollback_data` (for rollback mode).
+- **What it does:** Batch-processes risk assessments from pre-processed ARO CSV data. `dry_run`: previews changes + generates backup. `execute`: writes to each CI + backup for rollback. `rollback`: restores from backup data.
+- **Returns:** `{ content: { mode, total, pass, fail, results: [...], backup_data }, logs }`
+
+#### `masterDBEugeniaTest` — Auto-Test EuGenIA Prompts
+- **Path:** `/pc/masterdb/eugenia/test`
+- **Input:** JSON config with `testCases` array, `isDryRun`, `sleepBetweenMs`, `maxRetries`, `retryDelayMs`.
+- **What it does:** Fetches all active EuGenIA prompts, runs them through the EuGenIA API, evaluates `mustNotContain` rules, and generates a PASS/FAIL/ERROR report as CSV sent by email to the configured recipient.
+- **Returns:** Sends email with CSV report; ticket output contains test summary.
+
+#### `mcpToolsParamAddSimple` — Add Parameter to MCP Tool
+- **Path:** `/ai/tools/mcp/ParamAddSimple`
+- **Input:** JSON with `serverid`, `toolid`, `name`, `description` (required), optional `values` (array), `required` (boolean).
+- **What it does:** Registers a new parameter definition on an MCP tool server entry. Validates required fields.
+- **Returns:** `{ content: { success, param_added }, logs }`
+
+#### `aiToolsSystemUptime` — TheSys System Uptime
+- **Path:** `/ai/tools/thesys/uptime`
+- **Input:** None required.
+- **What it does:** Calls `/thesys/uptime`, parses the raw uptime string (format `Xd Yh Zm`), and returns a human-readable uptime summary with total minutes.
+- **Returns:** `{ content: { raw, days, hours, minutes, total_minutes, human_readable }, logs }`
+
+#### `aiToolsTRINInventoryAssuranceCreateChange` — Create TRIN Change for Inventory Assurance
+- **Path:** *(defined but NOT registered in startModule — not publicly callable)*
+- **Input:** JSON with `domain` (required), `summary` (required, max 200 chars), `notes` (required), `isDryRun` (default `false`).
+- **What it does:** Creates a TRIN Change record for inventory assurance workflows. Validates inputs, builds the change payload for the target domain.
+- **Returns:** `{ content: { success, change_id, dry_run }, logs }`
+
+---
+
 ## 3. Common Patterns & Best Practices
 
 ### 3.1 Standard Input Parsing Template
@@ -730,3 +898,31 @@ ticket.addOutput("[fn] SUCCESS: " + result.logs);         // → "SUCCESS: rows=
 | `listarContagensSAsPorLocalidade` | `/ai/greatops/listar_contagens_sa_por_localidade` | listarContagensSAsPorLocalidade.js | BigQuery | AI Query |
 | `navigationLogsUltimoDayPartPorTecnologia` | `/ai/greatops/navigation_logs_ultimo_day_part_por_tecnologia` | navigationLogsUltimoDayPartPorTecnologia.js | BigQuery | AI Query |
 | `getPortugueseDishes` | `/skills/getPortugueseDishes` | função_skills.js | Static | Demo/Test |
+| `aiToolsMasterDBFind` | `/ai/tools/masterdb/find` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBFindEnergyInfra` | `/ai/tools/masterdb/find/EnergyInfra` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBFindEnergyGenerator` | `/ai/tools/masterdb/find/EnergyGenerator` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBFindEnergySupplier` | `/ai/tools/masterdb/find/EnergySupplier` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBFindSupport` | `/ai/tools/masterdb/find/Support` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBFindSupport` | `/ai/tools/masterdb/find/EnergyAutonomy` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBGeoSearch` | `/ai/tools/masterdb/GEOSearch` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBTemplateAttributesGet` | `/ai/tools/masterdb/find/TemplateAttributes` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBClassificationsGet` | `/ai/tools/masterdb/find/Classifications` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBDependencySearch` | `/ai/tools/masterdb/find/DependencySearch` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBImpact` | `/ai/tools/masterdb/find/Impact` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBExportEmailCSV` | `/ai/tools/masterdb/export/EmailCsv` | masterdb-agent-tools.js | MasterDB API | Export |
+| `aiToolsMasterDBNetworkIPGet` | `/ai/tools/masterdb/find/NetworkIPGet` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBFindAttributeValues` | `/ai/tools/masterdb/find/AttributeValues` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBCockpitFindData` | `/ai/tools/masterdb/find/CockpitData` | masterdb-agent-tools.js | MasterDB / DataServer | AI Query |
+| `aiToolsMasterDBUpdate` | `/ai/tools/masterdb/update` | masterdb-agent-tools.js | MasterDB API | AI Write |
+| `aiToolsMasterDBFindTransformations` | `/ai/tools/masterdb/find/Transformations` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBTransformAdd` | `/ai/tools/masterdb/update/Transformations` | masterdb-agent-tools.js | MasterDB API | AI Write |
+| `aiToolsMasterDBComplianceSearch` | `/ai/tools/masterdb/find/Compliances` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBFindLocationGeoInfo` | `/ai/tools/masterdb/find/LocationGeoInfo` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBGetODFChain` | `/ai/tools/masterdb/ftth/GetODFChain` | masterdb-agent-tools.js | MasterDB API | AI Query |
+| `aiToolsMasterDBRiskUpsert` | `/ai/tools/masterdb/risk/upsert` | masterdb-agent-tools.js | MasterDB API | AI Write |
+| `aiToolsMasterDBRiskDeleteDimension` | `/ai/tools/masterdb/risk/delete` | masterdb-agent-tools.js | MasterDB API | AI Write |
+| `aiToolsMasterDBRiskBulkLoad` | `/pc/masterdb/risk/bulk/load` | masterdb-agent-tools.js | MasterDB API | Bulk/Admin |
+| `masterDBEugeniaTest` | `/pc/masterdb/eugenia/test` | masterdb-agent-tools.js | EuGenIA API | Admin/Test |
+| `mcpToolsParamAddSimple` | `/ai/tools/mcp/ParamAddSimple` | masterdb-agent-tools.js | MCP API | Management |
+| `aiToolsSystemUptime` | `/ai/tools/thesys/uptime` | masterdb-agent-tools.js | TheSys API | Utility |
+| `aiToolsTRINInventoryAssuranceCreateChange` | *(not registered)* | masterdb-agent-tools.js | TRIN/MAC API | AI Write |
